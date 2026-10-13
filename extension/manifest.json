@@ -1,6 +1,6 @@
 {
   "manifest_version": 3,
-  "name": "H Reader",
+  "name": "Reader",
   "version": "0.1.1",
   "description": "A simple local RSS reader with optional sync.",
   "minimum_chrome_version": "119",

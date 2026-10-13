@@ -207,7 +207,7 @@ function siteAddress(address: string): string {
 /** Run a task without waiting for it, logging a failure rather than leaving it unhandled. */
 export function logFailure(task: Promise<unknown>): void {
   task.catch((error: unknown) => {
-    console.error("H Reader:", error);
+    console.error("Reader:", error);
   });
 }
 
@@ -1488,7 +1488,7 @@ export class Reader {
     if (response?.type === "error") {
       throw new Error(response.message);
     } else if (response?.type !== "fetched") {
-      throw new Error("The H Reader extension is not installed.");
+      throw new Error("The Reader extension is not installed.");
     }
     // extensions before redirects were reported send no address
     const base = upgradedAddress(response.url) || url;

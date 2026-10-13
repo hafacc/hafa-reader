@@ -85,7 +85,7 @@ import java.text.NumberFormat
 
 private val SPACE_PATTERN = Regex("\\s")
 private const val OPML_TYPE = "text/x-opml"
-private const val EXPORT_NAME = "h-reader.opml"
+private const val EXPORT_NAME = "reader.opml"
 
 private fun looksLikeAddress(text: String): Boolean =
     hasScheme(text) || ("." in text && !SPACE_PATTERN.containsMatchIn(text))

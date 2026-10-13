@@ -93,7 +93,7 @@ export function buildOpml(feeds: OpmlFeed[]): string {
   return [
     '<?xml version="1.0" encoding="UTF-8"?>',
     '<opml version="2.0">',
-    "  <head><title>H Reader</title></head>",
+    "  <head><title>Reader</title></head>",
     "  <body>",
     ...lines,
     ...loose,

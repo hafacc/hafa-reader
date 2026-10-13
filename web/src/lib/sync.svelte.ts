@@ -131,7 +131,7 @@ export class Sync {
    */
   preload(): void {
     this.loadFirebase().catch((error: unknown) => {
-      console.debug("H Reader sync: preload failed", error);
+      console.debug("Reader sync: preload failed", error);
     });
   }
 
@@ -144,7 +144,7 @@ export class Sync {
       const engine = await this.load();
       this.popupBlocked = (await engine.signIn()) === "blocked";
     } catch (error) {
-      console.error("H Reader sign-in failed:", error);
+      console.error("Reader sign-in failed:", error);
       this.signInFailed = true;
     } finally {
       this.signingIn = false;
@@ -171,7 +171,7 @@ export class Sync {
       await engine?.deleteAccount();
       rememberSignedIn(false);
     } catch (error) {
-      console.error("H Reader could not delete the account:", error);
+      console.error("Reader could not delete the account:", error);
       this.deleteFailed = true;
     } finally {
       this.deleting = false;
@@ -261,7 +261,7 @@ export class Sync {
     });
     loading.catch((error: unknown) => {
       if (this.engine === loading) {
-        console.error("H Reader sync could not start:", errorSummary(error));
+        console.error("Reader sync could not start:", errorSummary(error));
         this.engine = undefined;
         this.status = "error";
         // try again after a wait that grows, or as soon as the browser is back online

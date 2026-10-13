@@ -1,7 +1,7 @@
-# H Reader web
+# Reader web
 
-The H Reader web app, live at [reader.hafa.cc](https://reader.hafa.cc/). It
-runs in desktop Chrome with the [H Reader extension](../extension), which
+The Reader web app, live at [reader.hafa.cc](https://reader.hafa.cc/). It
+runs in desktop Chrome with the [Reader extension](../extension), which
 fetches its feeds.
 
 ```sh

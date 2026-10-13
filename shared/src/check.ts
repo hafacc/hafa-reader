@@ -16,11 +16,11 @@ import {
 export function statusProblem(status: number): string {
   let words = `The site answered ${status}.`;
   if (status === 401 || status === 403) {
-    words = "The site refused to let H Reader read it.";
+    words = "The site refused to let Reader read it.";
   } else if (status === 404 || status === 410) {
     words = "Nothing was found at that address.";
   } else if (status === 429) {
-    words = "The site asked H Reader to slow down.";
+    words = "The site asked Reader to slow down.";
   } else if (status >= 500 && status <= 599) {
     words = "The site is having trouble.";
   }

@@ -388,7 +388,7 @@
 </script>
 
 <svelte:head>
-  <title>H Reader</title>
+  <title>Reader</title>
   <meta
     name="description"
     content="A simple local RSS reader with optional sync."

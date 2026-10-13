@@ -74,7 +74,7 @@ fun animationsOn(): Boolean {
 }
 
 /**
- * The H Reader logo: a navy tile, an amber dot and two arcs. While [loading],
+ * The Reader logo: a navy tile, an amber dot and two arcs. While [loading],
  * the arcs move outward from the dot; when it stops, they finish the step
  * they are on. Still when the system turns animations off. [labeled] gives
  * it the app's name for screen readers; off where the name is written beside it.

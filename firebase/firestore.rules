@@ -1,6 +1,6 @@
 rules_version = '2';
 
-// H Reader: each person's feeds, articles and view settings live under
+// Reader: each person's feeds, articles and view settings live under
 // users/{uid}; article text is shared under bodies/{hash}. See PLAN.md.
 //
 // The field lists and limits match the documents the clients write

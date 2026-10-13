@@ -1,4 +1,4 @@
-# H Reader — project context
+# Reader — project context
 
 An RSS reader that works with no account: every client fetches feeds itself
 and keeps everything on the device. Google sign-in (Firebase Auth) only turns

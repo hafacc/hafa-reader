@@ -1,6 +1,6 @@
 # shared
 
-The behavior H Reader's clients must agree on, as code and fixtures: the web app (`web/`) and the Chrome extension
+The behavior Reader's clients must agree on, as code and fixtures: the web app (`web/`) and the Chrome extension
 (`extension/`) import `src/` directly, and the Android app's `core` module
 ports it to Kotlin and reads `fixtures/` in its tests.
 

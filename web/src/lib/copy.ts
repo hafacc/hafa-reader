@@ -32,11 +32,11 @@ export const copy = {
   emptyTitle: "Add your first feed",
   emptyBody:
     "Paste a feed address, search for a topic, or import a list from another reader.",
-  extensionTitle: "H Reader needs its browser extension",
+  extensionTitle: "Reader needs its browser extension",
   extensionBody:
     "Websites do not let a web page read their feeds, so the extension fetches them for you and keeps them current in the background.",
   installExtension: "Install from the Chrome Web Store",
-  iosTitle: "H Reader is not on iPhone or iPad yet",
+  iosTitle: "Reader is not on iPhone or iPad yet",
   iosBody:
     "For now it works on Android and on a computer with Chrome, where its browser extension fetches your feeds.",
   noEntries: "Nothing here",
@@ -91,7 +91,7 @@ export const copy = {
   share: "Share",
   copied: "Copied",
   /** Name of the app, beside the logo. */
-  appName: "H Reader",
+  appName: "Reader",
   back: "Back",
   close: "Close",
   /** Label of the feed list for screen readers. */
@@ -105,7 +105,7 @@ export const copy = {
     "Optional. Sign in with Google to keep your feeds and what you have read the same on every device.",
   /** Button that starts Google sign-in. */
   syncSignIn: "Sign in",
-  firstRunSignInLine: "Already use H Reader?",
+  firstRunSignInLine: "Already use Reader?",
   firstRunSignIn: "Sign in to sync your feeds",
   /** Button that signs out; data stays on the device. */
   syncSignOut: "Sign out",

@@ -13,7 +13,7 @@
   "type": "module",
   "scripts": {
     "export": "rm -rf dist && bun build src/background.ts --outdir dist --target browser --format esm --minify && cp manifest.json dist/manifest.json && cp -r icons dist/icons",
-    "pack": "rm -rf store h-reader-extension.zip && bun build src/background.ts --outdir store --target browser --format esm --minify && cp manifest.json store/manifest.json && cp -r icons store/icons && bun scripts/store-manifest.ts store && (cd store && zip -r -X ../h-reader-extension.zip .) && rm -rf store",
+    "pack": "rm -rf store reader-extension.zip && bun build src/background.ts --outdir store --target browser --format esm --minify && cp manifest.json store/manifest.json && cp -r icons store/icons && bun scripts/store-manifest.ts store && (cd store && zip -r -X ../reader-extension.zip .) && rm -rf store",
     "lint": "tsc -p . && biome check --error-on-warnings",
     "fmt": "biome check --write",
     "icons": "rm -rf icons && mkdir icons && for size in 16 32 48 128; do rsvg-convert -w $size -h $size ../design/icons/logo.svg -o icons/icon-$size.png; done"

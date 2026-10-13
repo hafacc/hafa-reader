@@ -144,7 +144,7 @@
       link.href = URL.createObjectURL(
         new Blob([text], { type: "text/x-opml" }),
       );
-      link.download = "h-reader.opml";
+      link.download = "reader.opml";
       link.click();
       URL.revokeObjectURL(link.href);
     } catch {

@@ -1,4 +1,4 @@
-# H Reader
+# Reader
 
 [![build](https://github.com/hafacc/hafa-reader/actions/workflows/build.yml/badge.svg)](https://github.com/hafacc/hafa-reader/actions/workflows/build.yml)
 [![extension](https://img.shields.io/badge/dynamic/json?label=extension&prefix=v&query=%24.version&url=https://raw.githubusercontent.com/hafacc/hafa-reader/main/extension/manifest.json)](https://github.com/hafacc/hafa-reader/releases?q=extension-v)
@@ -29,7 +29,7 @@ dependencies resolve from `shared/node_modules`.
    listing's public key, so the extension gets the id the web app expects.
 4. `cd web && bun install && bun dev`, then open http://localhost:5173.
 
-`bun pack` in `extension/` builds `h-reader-extension.zip` for the Web Store: no
+`bun pack` in `extension/` builds `reader-extension.zip` for the Web Store: no
 `key` (the store sets it) and no localhost.
 
 ## Releases

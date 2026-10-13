@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <!-- Wording from web/src/lib/copy.ts and the web components, kept the same. -->
-    <string name="app_name" translatable="false">H Reader</string>
+    <string name="app_name" translatable="false">Reader</string>
     <string name="all_items">All items</string>
     <string name="starred">Starred</string>
     <string name="mark_all_read">Mark all as read</string>
@@ -39,7 +39,7 @@
     <string name="filter_hint">Words match whole words in the title or summary, ignoring capitals and spacing.</string>
     <string name="topics">Topics</string>
     <string name="end_of_list">End of list</string>
-    <string name="first_sign_in_line">Already use H Reader?</string>
+    <string name="first_sign_in_line">Already use Reader?</string>
     <string name="first_sign_in">Sign in to sync your feeds</string>
     <string name="retention_label">Keep synced articles</string>
     <string name="retention_note">Older articles are removed from your account only, never from this device.</string>
@@ -68,9 +68,9 @@
     <string name="error_not_https_feed">The feed is not on https.</string>
     <string name="error_not_a_feed">That address is not a feed and does not point to one.</string>
     <string name="error_status">The site answered %1$d.</string>
-    <string name="error_refused">The site refused to let H Reader read it.</string>
+    <string name="error_refused">The site refused to let Reader read it.</string>
     <string name="error_missing">Nothing was found at that address.</string>
-    <string name="error_too_many">The site asked H Reader to slow down.</string>
+    <string name="error_too_many">The site asked Reader to slow down.</string>
     <string name="error_site_trouble">The site is having trouble.</string>
     <string name="error_unreadable">The site answered, but not with a readable feed.</string>
     <!-- Sign-in and sync, from the web app. -->
