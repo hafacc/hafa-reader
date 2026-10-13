@@ -114,7 +114,9 @@ from a device.
   them, so first sync stays fast however long the history is. Progress is kept,
   so a reload carries on where it stopped.
 - **Account deletion:** Delete account in the sync section (pressed twice to
-  confirm) first signs in again, straight from the press, so Firebase accepts
+  confirm), or the public page https://reader.hafa.cc/delete (which Google
+  Play requires; it works in any browser, with no extension and no reader
+  data, and runs the same deletion code), first signs in again, straight from the press, so Firebase accepts
   deleting the sign-in; closing that changes nothing. It then waits for writes
   on their way, removes the user's subscriptions, entries and settings from
   Firestore, the device's sync progress for that account, and the Firebase

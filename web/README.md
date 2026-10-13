@@ -15,6 +15,7 @@ bun export   # static site in build/
 
 Public settings (the extension's id, the Firebase web config) are committed in
 `src/lib/config.ts`; there are no environment variables. The privacy policy and
-terms are plain pages in `src/routes/(policy)/`, built without script.
+terms are plain pages in `src/routes/(policy)/`, built without script; the
+delete account page there (`/delete`) is the one with script.
 `bun scripts/icons.ts` regenerates `static/` icons from
 `../design/icons/logo.svg` (needs rsvg-convert and ImageMagick).

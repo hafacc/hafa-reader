@@ -146,6 +146,20 @@ export const copy = {
   syncSwitchCancel: "Cancel sign-in",
   /** Button that starts deleting the signed-in account. */
   syncDeleteAccount: "Delete account",
+  deletePageTitle: "Delete your Reader account",
+  deleteSignInLine:
+    "Sign in to delete your account and everything synced to it.",
+  deleteContinueGoogle: "Continue with Google",
+  deleteSignedInAs: "Signed in as",
+  deleteOtherAccount: "Use a different account",
+  deleteExplain:
+    "This deletes your account and everything synced to it: your feeds, articles, read marks and settings. It happens right away and can't be undone. Copies on your devices stay where they are.",
+  deleteEverything: "Delete everything",
+  deleteFailedPage:
+    "Deleting didn't finish. Some data may already be gone. Please try again.",
+  deleteDone: "Your account is deleted.",
+  deleteLoading: "Loading",
+  deleteAndroid: "The Android app has the same option in its account screen.",
   /** The same button once pressed, asking for a second press. */
   syncDeleteConfirm: "Press again to delete your account",
   /** What deleting the account does. */

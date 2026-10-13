@@ -46,6 +46,7 @@ import {
   where,
   writeBatch,
 } from "firebase/firestore";
+import type { DeletionBackend } from "../account-deletion.svelte.ts";
 import type { FirebaseSettings } from "../config.ts";
 import type { Entry } from "../types.ts";
 import { BODIES, matches, shareable } from "./bodies.ts";
@@ -1409,6 +1410,87 @@ function forgetProgress(uid: string): void {
   }
 }
 
+/** Sign in with Google in a pop-up window; closing it is not an error. */
+export async function signInWithGoogle(auth: Auth): Promise<SignInResult> {
+  let result: SignInResult = "closed";
+  try {
+    await signInWithPopup(auth, new GoogleAuthProvider());
+    result = "signed-in";
+  } catch (error) {
+    if (isBlocked(error)) {
+      result = "blocked";
+    } else if (!isCancel(error)) {
+      throw error;
+    }
+  }
+  return result;
+}
+
+/** What the caller of `deleteAccountOf` does at each step. */
+export interface DeleteSteps {
+  /** After signing in again, before anything is deleted: stop writing to the account. */
+  stopping?: () => void;
+  /** Removing the documents failed, so the account is as it was: sync may carry on. */
+  kept?: () => void;
+  /** The documents are gone; only the sign-in is left to remove. */
+  emptied?: () => void;
+}
+
+/**
+ * Delete a signed-in account, the one way both the app and the delete page
+ * use. Signing in again opens straight from the click, before anything is
+ * deleted, so Firebase accepts removing the sign-in; closing it changes
+ * nothing. Then, once writes on their way have landed, the account's
+ * documents go, with this device's sync progress for it, then the sign-in
+ * itself. It always ends signed out once the documents are gone, even when
+ * removing the sign-in fails, so nothing is uploaded into the emptied account.
+ */
+export async function deleteAccountOf(
+  firebase: Services,
+  current: User,
+  steps: DeleteSteps = {},
+): Promise<void> {
+  await reauthenticateWithPopup(current, new GoogleAuthProvider());
+  steps.stopping?.();
+  try {
+    await deleteAccountData(firebase.db, current.uid);
+  } catch (error) {
+    steps.kept?.();
+    throw error;
+  }
+  steps.emptied?.();
+  forgetProgress(current.uid);
+  if (lastAccount() === current.uid) {
+    forgetAccount();
+  }
+  try {
+    await deleteUser(current);
+  } finally {
+    await signOut(firebase.auth);
+  }
+}
+
+/** The delete page's way into Firebase: sign-in and the app's own account deletion, with no reader behind it. */
+export function deletionBackend(settings: FirebaseSettings): DeletionBackend {
+  const firebase = firebaseServices(settings);
+  return {
+    watch(onUser): void {
+      onAuthStateChanged(firebase.auth, (user) => {
+        onUser(user?.email ?? undefined);
+      });
+    },
+    signIn: () => signInWithGoogle(firebase.auth),
+    signOut: () => signOut(firebase.auth),
+    async deleteAccount(): Promise<void> {
+      const current = firebase.auth.currentUser;
+      if (current === null) {
+        throw new Error("no account is signed in");
+      }
+      await deleteAccountOf(firebase, current);
+    },
+  };
+}
+
 /** Firebase's sign-in and database for the page. */
 export interface Services {
   /** Google sign-in. */
@@ -1554,19 +1636,8 @@ export function startFirebase(
   update();
 
   return {
-    async signIn(): Promise<SignInResult> {
-      let result: SignInResult = "closed";
-      try {
-        await signInWithPopup(auth, new GoogleAuthProvider());
-        result = "signed-in";
-      } catch (error) {
-        if (isBlocked(error)) {
-          result = "blocked";
-        } else if (!isCancel(error)) {
-          throw error;
-        }
-      }
-      return result;
+    signIn(): Promise<SignInResult> {
+      return signInWithGoogle(auth);
     },
     async replaceLocal(): Promise<void> {
       if (waiting && !replacing && user !== null) {
@@ -1590,32 +1661,22 @@ export function startFirebase(
     async deleteAccount(): Promise<void> {
       const current = auth.currentUser;
       if (current !== null) {
-        // signing in again opens straight from the click, before anything is
-        // deleted; closing or failing it leaves sync running as it was
-        await reauthenticateWithPopup(current, new GoogleAuthProvider());
         const wasWaiting = waiting;
-        waiting = false;
-        // nothing may be written back while the account is emptied
-        session?.stop(true);
-        session = undefined;
-        heldForDelete = [];
-        try {
-          await deleteAccountData(db, current.uid);
-        } catch (error) {
-          resumeAfterFailedDelete(current.uid, wasWaiting);
-          throw error;
-        }
-        heldForDelete = undefined;
-        forgetProgress(current.uid);
-        if (lastAccount() === current.uid) {
-          forgetAccount();
-        }
-        try {
-          await deleteUser(current);
-        } finally {
-          // the account's data is gone: signed out, this device's data is not uploaded into it again
-          await signOut(auth);
-        }
+        await deleteAccountOf({ auth, db }, current, {
+          stopping(): void {
+            waiting = false;
+            // nothing may be written back while the account is emptied
+            session?.stop(true);
+            session = undefined;
+            heldForDelete = [];
+          },
+          kept(): void {
+            resumeAfterFailedDelete(current.uid, wasWaiting);
+          },
+          emptied(): void {
+            heldForDelete = undefined;
+          },
+        });
       }
     },
     async signOut(): Promise<void> {

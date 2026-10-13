@@ -1,6 +1,7 @@
 import { type FirebaseSettings, firebaseConfig } from "./config.ts";
 import { copy } from "./copy.ts";
 import { accountPhoto } from "./photo.ts";
+import { rememberSignedIn, wasSignedIn } from "./signed-in.ts";
 import type { Retention } from "./sync/documents.ts";
 import { errorSummary } from "./sync/errors.ts";
 import type { Engine } from "./sync/firebase.ts";
@@ -10,21 +11,6 @@ import type {
   SyncReport,
   SyncStatus,
 } from "./sync/host.ts";
-
-/** Set while an account is signed in, so Firebase loads on the next visit. */
-const SIGNED_IN_KEY = "h-reader:signed-in";
-
-function rememberSignedIn(signedIn: boolean): void {
-  try {
-    if (signedIn) {
-      localStorage.setItem(SIGNED_IN_KEY, "1");
-    } else {
-      localStorage.removeItem(SIGNED_IN_KEY);
-    }
-  } catch {
-    // storage can be blocked; sign-in then lasts only this visit
-  }
-}
 
 /** First wait before a failed start is tried again; it doubles with each failure. */
 const START_RETRY_MS = 5000;
@@ -44,14 +30,6 @@ import.meta.hot?.dispose(() => {
   }
   liveEngines.clear();
 });
-
-function wasSignedIn(): boolean {
-  try {
-    return localStorage.getItem(SIGNED_IN_KEY) === "1";
-  } catch {
-    return false;
-  }
-}
 
 /**
  * Optional Google sign-in and Firestore sync.

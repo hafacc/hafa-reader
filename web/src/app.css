@@ -114,6 +114,13 @@ input,
   --tw-prose-td-borders: var(--line);
 }
 
+/* the delete page's wait, shown only when it lasts so a quick one never flashes */
+@keyframes appear {
+  from {
+    opacity: 0;
+  }
+}
+
 @keyframes dot-pulse {
   50% {
     opacity: 0.45;
