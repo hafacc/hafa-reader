@@ -26,7 +26,7 @@
   /** Show a failed account action in the usual sync notice. */
   function reportFailure(action: Promise<void>): void {
     action.catch((error: unknown) => {
-      console.error("H Reader sync:", error);
+      console.error("Reader sync:", error);
       reader.notify(copy.syncError);
     });
   }

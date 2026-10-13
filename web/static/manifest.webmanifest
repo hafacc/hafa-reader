@@ -1,6 +1,6 @@
 {
-  "name": "H Reader",
-  "short_name": "H Reader",
+  "name": "Reader",
+  "short_name": "Reader",
   "description": "A simple local RSS reader with optional sync.",
   "start_url": "/",
   "display": "standalone",

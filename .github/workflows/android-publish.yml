@@ -58,11 +58,11 @@ jobs:
           tag: ${{ inputs.tag }}
         run: |
           mkdir -p "$RUNNER_TEMP/out"
-          cp app/build/outputs/bundle/release/app-release.aab "$RUNNER_TEMP/out/h-reader-$tag.aab"
-          cp app/build/outputs/apk/release/app-release.apk "$RUNNER_TEMP/out/h-reader-$tag.apk"
+          cp app/build/outputs/bundle/release/app-release.aab "$RUNNER_TEMP/out/reader-$tag.aab"
+          cp app/build/outputs/apk/release/app-release.apk "$RUNNER_TEMP/out/reader-$tag.apk"
       - uses: actions/upload-artifact@v7
         with:
-          name: h-reader-${{ inputs.tag }}
+          name: reader-${{ inputs.tag }}
           path: ${{ runner.temp }}/out
           if-no-files-found: error
       - name: create GitHub release
@@ -70,7 +70,7 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           tag: ${{ inputs.tag }}
         run: |
-          apk="$RUNNER_TEMP/out/h-reader-$tag.apk"
+          apk="$RUNNER_TEMP/out/reader-$tag.apk"
           if gh release view "$tag" > /dev/null 2>&1; then
             gh release upload "$tag" "$apk" --clobber
             exit 0
@@ -101,7 +101,7 @@ jobs:
       - uses: gradle/actions/setup-gradle@3f5f9adaf7d9fecd50b5935e54106014257a94e6 # v6
       - uses: actions/download-artifact@v8
         with:
-          name: h-reader-${{ inputs.tag }}
+          name: reader-${{ inputs.tag }}
           path: ${{ runner.temp }}/bundle
       # the artifact also holds the APK, which --artifact-dir would offer to Play
       - run: rm "$RUNNER_TEMP"/bundle/*.apk

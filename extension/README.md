@@ -1,6 +1,6 @@
-# H Reader Chrome extension
+# Reader Chrome extension
 
-Fetches feeds for the H Reader web app, which can't read most sites itself, and
+Fetches feeds for the Reader web app, which can't read most sites itself, and
 checks them on a schedule in the background. No UI of its own; the page talks
 to it with `chrome.runtime.sendMessage` (message types in
 `../shared/src/protocol.ts`).
@@ -13,7 +13,7 @@ cd ../extension
 bun install
 bun export      # bundles to dist/
 bun lint        # type-check and biome
-bun pack        # h-reader-extension.zip for the Web Store
+bun pack        # reader-extension.zip for the Web Store
 bun icons       # icons/ from ../design/icons/logo.svg; needs rsvg-convert
 ```
 

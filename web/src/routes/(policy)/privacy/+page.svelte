@@ -1,28 +1,28 @@
 <svelte:head>
-  <title>H Reader privacy policy</title>
+  <title>Reader privacy policy</title>
   <meta
     name="description"
-    content="What H Reader reads, what it stores and where, and how to delete it."
+    content="What Reader reads, what it stores and where, and how to delete it."
   >
 </svelte:head>
 
-<h1>H Reader privacy policy</h1>
+<h1>Reader privacy policy</h1>
 <p class="text-muted text-sm">Last updated October 13, 2026</p>
 
 <p>
-  H Reader shows new articles from the feeds you add. It has no server of its
-  own. Without an account, your feeds, what you read and your settings stay on
-  your device. To fetch feeds and pictures, and to search for new feeds, your
-  device asks the sites that publish them, or Feedly, directly, so they see your
+  Reader shows new articles from the feeds you add. It has no server of its own.
+  Without an account, your feeds, what you read and your settings stay on your
+  device. To fetch feeds and pictures, and to search for new feeds, your device
+  asks the sites that publish them, or Feedly, directly, so they see your
   device's internet address as they would on any visit.
 </p>
 
-<h2>What H Reader reads</h2>
+<h2>What Reader reads</h2>
 <ul>
   <li>
     The feeds you add, fetched straight from the sites that publish them: by the
-    H Reader Chrome extension for the web app, and by the app itself on Android.
-    To find a feed, H Reader may also read the page at an address you enter.
+    Reader Chrome extension for the web app, and by the app itself on Android.
+    To find a feed, Reader may also read the page at an address you enter.
   </li>
   <li>
     Pictures in articles and the sites' icons, loaded from the sites that
@@ -36,13 +36,13 @@
   <li>
     If you sign in with Google, on the web or in the Android app: the email
     address, name and picture of your Google account, which Google shares at
-    sign-in. H Reader shows the email address and the picture, to say which
+    sign-in. Reader shows the email address and the picture, to say which
     account is signed in; the picture is loaded from Google, which sees the
     request as it would any visit.
   </li>
 </ul>
 
-<h2>What H Reader stores, and where</h2>
+<h2>What Reader stores, and where</h2>
 <ul>
   <li>
     On your device: your feeds and groups, their articles, which articles you
@@ -74,16 +74,16 @@
 <h2>How your data is protected</h2>
 <ul>
   <li>
-    H Reader uses encrypted connections only: feeds, articles, pictures, search
+    Reader uses encrypted connections only: feeds, articles, pictures, search
     and sync all travel over https.
   </li>
   <li>
-    Your Google sign-in is handled by Google and Firebase. What H Reader stores
-    in Firebase is protected by your Google account.
+    Your Google sign-in is handled by Google and Firebase. What Reader stores in
+    Firebase is protected by your Google account.
   </li>
 </ul>
 
-<h2>What H Reader doesn't do</h2>
+<h2>What Reader doesn't do</h2>
 <ul>
   <li>
     It has no ads and no analytics. Your data is never sold or shared, and
@@ -97,12 +97,12 @@
     Sign-in and sync use Google Firebase, and Google's privacy policy applies:
     <a href="https://policies.google.com/privacy"
       >https://policies.google.com/privacy</a
-    >. H Reader's own terms are at
+    >. Reader's own terms are at
     <a href="https://reader.hafa.cc/terms">https://reader.hafa.cc/terms</a>.
   </li>
   <li>
-    H Reader's use of information received from Google APIs follows the Google
-    API Services User Data Policy, including its Limited Use requirements.
+    Reader's use of information received from Google APIs follows the Google API
+    Services User Data Policy, including its Limited Use requirements.
   </li>
 </ul>
 
@@ -120,12 +120,12 @@
     To delete your account, sign in on the web or in the Android app, open the
     sync section and press Delete account twice. It removes your feeds,
     articles, read and starred marks and settings from your account, and your
-    Google sign-in from H Reader, then signs you out. What is on your device
-    stays until you remove it as above. Shared article text holds nothing about
-    you and stays.
+    Google sign-in from Reader, then signs you out. What is on your device stays
+    until you remove it as above. Shared article text holds nothing about you
+    and stays.
   </li>
   <li>
-    You can remove H Reader's access to your Google account at any time at
+    You can remove Reader's access to your Google account at any time at
     <a href="https://myaccount.google.com/permissions"
       >https://myaccount.google.com/permissions</a
     >.

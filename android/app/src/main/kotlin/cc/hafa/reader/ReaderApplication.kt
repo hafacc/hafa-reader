@@ -35,7 +35,7 @@ import java.util.concurrent.atomic.AtomicBoolean
 
 // A failure in background reader work is logged rather than ending the app.
 private val logFailures = CoroutineExceptionHandler { _, failure ->
-    Log.w("HReader", "background work failed", failure)
+    Log.w("Reader", "background work failed", failure)
 }
 
 /** The app: one reader shared by the screens and the background worker, and sync. */
@@ -103,7 +103,7 @@ class ReaderApplication : Application() {
             } catch (cancelled: CancellationException) {
                 throw cancelled
             } catch (failure: Exception) {
-                Log.w("HReader", "sync could not start", failure)
+                Log.w("Reader", "sync could not start", failure)
             } finally {
                 // Whatever stopped it, empty Firebase settings included, signing in then fails at once.
                 if (!started) {

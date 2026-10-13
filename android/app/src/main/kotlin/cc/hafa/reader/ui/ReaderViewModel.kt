@@ -93,7 +93,7 @@ data class Snapshot(
 
 // A failure in reader work started from a screen is logged rather than ending the app.
 private val logFailures = CoroutineExceptionHandler { _, failure ->
-    Log.w("HReader", "reader work failed", failure)
+    Log.w("Reader", "reader work failed", failure)
 }
 
 /** Holds the reader for the screens and moves between them. */
@@ -316,7 +316,7 @@ class ReaderViewModel(application: Application) : AndroidViewModel(application) 
             } catch (cancelled: CancellationException) {
                 throw cancelled
             } catch (failure: Exception) {
-                Log.w("HReader", "import failed", failure)
+                Log.w("Reader", "import failed", failure)
                 null
             }
             if (result == null) {

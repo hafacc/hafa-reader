@@ -587,7 +587,7 @@ class Session {
     ) {
       this.creating = this.createPending()
         .catch((error: unknown) => {
-          console.debug("H Reader sync: upload waits for the next try", error);
+          console.debug("Reader sync: upload waits for the next try", error);
           this.retryCreatesLater();
         })
         .finally(() => {
@@ -630,7 +630,7 @@ class Session {
   /** Report a failed write; it clears with the next write that goes through. */
   private fail(error: unknown): void {
     if (!this.stopped) {
-      console.error("H Reader sync failed:", errorSummary(error));
+      console.error("Reader sync failed:", errorSummary(error));
       this.health.writeFailed();
       this.onStatus();
     }
@@ -639,7 +639,7 @@ class Session {
   /** Report a failed read, or a snapshot that could not be stored; it clears with the next read that works. */
   private failRead(error: unknown): void {
     if (!this.stopped) {
-      console.error("H Reader sync failed to read:", errorSummary(error));
+      console.error("Reader sync failed to read:", errorSummary(error));
       this.health.readFailed();
       this.onStatus();
     }
@@ -665,7 +665,7 @@ class Session {
         subscribe((error) => {
           if (!this.stopped) {
             console.error(
-              `H Reader sync: ${name} listener stopped:`,
+              `Reader sync: ${name} listener stopped:`,
               errorSummary(error),
             );
             this.health.listenerFailed(name);
@@ -1029,7 +1029,7 @@ class Session {
           }
         }
       } catch (error) {
-        console.debug("H Reader sync: page read failed, retrying", error);
+        console.debug("Reader sync: page read failed, retrying", error);
         await retryLater();
       }
     }
@@ -1048,7 +1048,7 @@ class Session {
         result = await task();
         done = true;
       } catch (error) {
-        console.debug("H Reader sync: retrying after", error);
+        console.debug("Reader sync: retrying after", error);
         await retryLater();
       }
     }
@@ -1152,7 +1152,7 @@ class Session {
         })
         .catch((error: unknown) => {
           this.checkedBodies.delete(hash);
-          console.debug("H Reader sync: body upload failed", error);
+          console.debug("Reader sync: body upload failed", error);
         });
     }
   }
@@ -1282,7 +1282,7 @@ class Session {
   ): Promise<void> {
     if (group.length === 1) {
       console.error(
-        "H Reader sync: write refused, dropped:",
+        "Reader sync: write refused, dropped:",
         errorSummary(refusal),
       );
     } else {
@@ -1295,7 +1295,7 @@ class Session {
               throw error;
             }
             console.error(
-              "H Reader sync: write refused, dropped:",
+              "Reader sync: write refused, dropped:",
               errorSummary(error),
             );
           }
@@ -1663,7 +1663,7 @@ export function startFirebase(
           const value: unknown = data?.["text"];
           text = typeof value === "string" ? value : "";
         } catch (error) {
-          console.debug("H Reader sync: body download failed", error);
+          console.debug("Reader sync: body download failed", error);
           text = "";
         }
       }

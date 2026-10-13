@@ -34,7 +34,7 @@ jobs:
           tag: ${{ inputs.tag }}
         run: |
           if gh release view "$tag" > /dev/null 2>&1; then
-            gh release upload "$tag" h-reader-extension.zip --clobber
+            gh release upload "$tag" reader-extension.zip --clobber
           else
-            gh release create "$tag" --generate-notes --verify-tag h-reader-extension.zip
+            gh release create "$tag" --generate-notes --verify-tag reader-extension.zip
           fi

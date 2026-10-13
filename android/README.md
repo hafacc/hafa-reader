@@ -1,6 +1,6 @@
-# H Reader for Android
+# Reader for Android
 
-The H Reader app for Android phones, in Kotlin and Jetpack Compose. It works
+The Reader app for Android phones, in Kotlin and Jetpack Compose. It works
 on its own: it fetches feeds itself and keeps everything on the device.
 Signing in with Google turns on sync with the web app and other devices.
 

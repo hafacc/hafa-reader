@@ -13,7 +13,7 @@ function isResponse(value: unknown): value is ExtensionResponse {
   );
 }
 
-/** Talks to the H Reader browser extension. */
+/** Talks to the Reader browser extension. */
 export class ExtensionClient {
   /** Version of the installed extension; empty when there is none. */
   version = $state("");

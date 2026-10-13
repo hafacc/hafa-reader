@@ -110,7 +110,7 @@ test("a failure waits at least as long as the site asks", async () => {
     NOW,
   );
   expect(limited.feed.nextFetch).toBe(NOW + 3 * HOUR);
-  expect(limited.feed.error).toBe("The site asked H Reader to slow down.");
+  expect(limited.feed.error).toBe("The site asked Reader to slow down.");
   const plain = await judge(scheduled(), answer("", { status: 500 }), NOW);
   expect(plain.feed.nextFetch).toBe(NOW + retryInterval(0));
 });
@@ -254,8 +254,8 @@ test("a window of only new items is checked again soon", async () => {
 });
 
 test("a status says in plain words what the site did", () => {
-  expect(statusProblem(403)).toBe("The site refused to let H Reader read it.");
-  expect(statusProblem(401)).toBe("The site refused to let H Reader read it.");
+  expect(statusProblem(403)).toBe("The site refused to let Reader read it.");
+  expect(statusProblem(401)).toBe("The site refused to let Reader read it.");
   expect(statusProblem(404)).toBe("Nothing was found at that address.");
   expect(statusProblem(503)).toBe("The site is having trouble.");
   expect(statusProblem(418)).toBe("The site answered 418.");

@@ -1,4 +1,4 @@
-# H Reader plan
+# Reader plan
 
 An RSS reader for the web, Android and iOS. No server code: every device
 fetches feeds itself and syncs through Firebase.
@@ -157,7 +157,7 @@ from a device.
    feeds itself, so it requires the extension and links to it when it is missing.
    Phones and tablets cannot install it, so, judged by the user agent alone, an
    Android browser goes straight to the Play Store listing and an iPhone or iPad
-   browser gets a short note that H Reader is not there yet.
+   browser gets a short note that Reader is not there yet.
    For each feed the extension keeps one model of when it posts
    (`shared/src/schedule.ts`): a Poisson process whose rate at a time is a base
    daily rate times three factors, for the UTC hour of the day (24 bins), the day
@@ -270,7 +270,7 @@ decides). Web with the extension closed gets nothing until a device opens.
   nothing new.
 - **Feed pictures:** the feed's own icon, else the site's `/favicon.ico`, else a
   letter tile. The sidebar rows keep one icon column in both states.
-- **Refreshing:** the H Reader name goes to All items and checks every feed, as
+- **Refreshing:** the Reader name goes to All items and checks every feed, as
   does `Shift R`; clicking the row of the view you are in, the `r` key and pulling
   the list down from its top on a phone check the feeds of that view, as does the
   Refresh button in the footer that ends every non-empty list ("End of list"
@@ -300,7 +300,7 @@ decides). Web with the extension closed gets nothing until a device opens.
 - **Loading logo:** the logo pulses while the app loads, feeds refresh, or a feed is
   being added (not with reduced motion).
 - **First run:** with no feeds, the reader asks for a first feed and, below
-  that, offers sign-in ("Already use H Reader?" and a "Sign in to sync your
+  that, offers sign-in ("Already use Reader?" and a "Sign in to sync your
   feeds" button, the same sign-in as the sidebar's), for someone whose feeds
   are in an account. Signed in, it shows the sync status instead until the
   account's feeds have come from the server; an empty account, or sync that is
@@ -351,7 +351,7 @@ decides). Web with the extension closed gets nothing until a device opens.
   they are checked the button keeps its label, is disabled and its icon turns
   (still when the system or browser turns motion off). It sits above the bottom
   bar; there is no pull-up gesture.
-- **Sidebar:** a brand header (the icon and "H Reader") stays in place while the
+- **Sidebar:** a brand header (the icon and "Reader") stays in place while the
   sidebar collapses to an icon strip, which opens over the list when hovered; icons
   and rows keep their positions so the change is a smooth width and fade.
 - **Account picture:** when signed in, the sidebar's sync row and the account
@@ -364,7 +364,7 @@ decides). Web with the extension closed gets nothing until a device opens.
   inner arc and a light-blue outer arc. Files: `design/icons/logo.svg` (the source; `bun scripts/icons.ts` in
   `web/` and `bun icons` in `extension/` make the PNGs from it),
   `web/src/lib/components/logo.svelte`, the Android launcher vectors.
-- **Store build:** `bun pack` in `extension/` builds `h-reader-extension.zip`
+- **Store build:** `bun pack` in `extension/` builds `reader-extension.zip`
   without the `key` (the store listing's public key) or the localhost entry in the web app's allowed
   origins.
 
