@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="utf-8"?>
+<feed xmlns="http://www.w3.org/2005/Atom" xmlns:media="http://search.yahoo.com/mrss/">
+  <title>Photo Log</title>
+  <link rel="alternate" href="https://photos.example.org/"/>
+  <entry>
+    <title>Harbor at dawn</title>
+    <id>tag:photos.example.org,2026:7</id>
+    <link rel="alternate" href="/7"/>
+    <published>2026-10-02T06:30:00Z</published>
+    <media:content url="https://photos.example.org/7.jpg" medium="image" type="image/jpeg">
+      <media:title>Harbor</media:title>
+    </media:content>
+    <summary>Boats leaving early.</summary>
+    <content type="html">&lt;p&gt;The &lt;b&gt;full&lt;/b&gt; story.&lt;/p&gt;</content>
+  </entry>
+</feed>

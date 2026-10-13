@@ -1,0 +1,39 @@
+{
+  "feeds": [
+    {
+      "input": { "url": "https://example.com/rss" },
+      "output": "157a72a2d301d759331e8b7400231102d3db9ccf9cec89047c73f63594524a01"
+    },
+    {
+      "input": { "url": "  https://example.com/rss\n" },
+      "output": "157a72a2d301d759331e8b7400231102d3db9ccf9cec89047c73f63594524a01"
+    },
+    {
+      "input": {
+        "url": "https://www.youtube.com/feeds/videos.xml?channel_id=UCexampleChannel01"
+      },
+      "output": "2020c506a61097ba06cf773aec62bfbe318cb4224fb9b26cc821dd010221e914"
+    }
+  ],
+  "entries": [
+    {
+      "input": { "feedId": "157a72a2d301d759331e8b7400231102d3db9ccf9cec89047c73f63594524a01", "guid": "post-1" },
+      "output": "778c743de2dc753f3c7686d1d6905ad5238d8b97e0d62b8846e1f550bf792ca9"
+    },
+    {
+      "input": { "feedId": "2020c506a61097ba06cf773aec62bfbe318cb4224fb9b26cc821dd010221e914", "guid": "yt:video:abcDEF12345" },
+      "output": "55a490b19e633ea55b0ac6ff17d883985e9cedd5e5d459d18f515a656b5c1949"
+    },
+    {
+      "input": {
+        "feedId": "157a72a2d301d759331e8b7400231102d3db9ccf9cec89047c73f63594524a01",
+        "guid": "https://example.com/posts/caf%C3%A9"
+      },
+      "output": "de016188faf50c4c582c22b6bbe151ab7c5280efac512ac3dba0ae61dd1dc9c6"
+    },
+    {
+      "input": { "feedId": "157a72a2d301d759331e8b7400231102d3db9ccf9cec89047c73f63594524a01", "guid": "Café – “quoted” 日本" },
+      "output": "92e5291852dfc57920f3bfe6a7a9d5d359fe0ed43cbbe0fe103c85b5aafb7e5f"
+    }
+  ]
+}

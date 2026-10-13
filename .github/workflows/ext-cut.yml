@@ -1,0 +1,76 @@
+# Cut a release of the extension: bump the version and tag it, then dispatch release off the tag.
+name: ext-cut
+
+on:
+  workflow_dispatch:
+    inputs:
+      bump:
+        description: semver bump
+        type: choice
+        options: [patch, minor, major]
+        default: patch
+
+permissions: {}
+
+jobs:
+  gate:
+    uses: ./.github/workflows/build.yml
+    with:
+      only: extension shared
+    permissions:
+      contents: read
+      pull-requests: read # build.yml asks for it; unused here
+
+  cut:
+    needs: gate
+    runs-on: ubuntu-latest
+    # one cut at a time; another waits its turn
+    concurrency:
+      group: cut
+      cancel-in-progress: false
+      queue: max
+    permissions:
+      contents: write # push the bump + tag
+      actions: write # dispatch release
+    defaults:
+      run:
+        working-directory: extension
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          # the commit the gate tested; if main has moved since, the push below is refused
+          ref: ${{ github.sha }}
+      # the bump goes on main, so pushing a commit from another branch could move main to it
+      - name: only from main
+        if: github.ref != 'refs/heads/main'
+        run: |
+          echo "::error::run this workflow on main"
+          exit 1
+      - uses: oven-sh/setup-bun@v2
+      - run: bun install --frozen-lockfile
+      - name: bump version
+        id: bump
+        # manifest.json is the version source of truth; package.json's version is unused (private, unpublished)
+        run: |
+          jq --arg bump "${{ inputs.bump }}" '.version |= (split(".") | map(tonumber)
+            | if $bump == "major" then [.[0] + 1, 0, 0]
+              elif $bump == "minor" then [.[0], .[1] + 1, 0]
+              else [.[0], .[1], .[2] + 1] end
+            | map(tostring) | join("."))' manifest.json > manifest.tmp
+          mv manifest.tmp manifest.json
+          bunx biome format --write manifest.json
+          echo "version=$(jq -r .version manifest.json)" >> "$GITHUB_OUTPUT"
+      - name: commit, tag, and trigger release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          version: ${{ steps.bump.outputs.version }}
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git commit -am "extension v$version"
+          # branch first, tag second (never --follow-tags): a moved main is rejected before the tag exists
+          git push origin HEAD:main
+          git tag -a "extension-v$version" -m "extension v$version"
+          git push origin "extension-v$version"
+          # token-pushed tags don't fire on:push, so dispatch instead
+          gh workflow run ext-release.yml --ref main -f tag="extension-v$version"

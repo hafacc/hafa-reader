@@ -1,0 +1,121 @@
+@import "tailwindcss";
+@plugin "@tailwindcss/typography";
+
+:root {
+  color-scheme: light;
+  --page: #ffffff;
+  --side: #eef0ea;
+  --panel: #ffffff;
+  --line: #dcded8;
+  --text: #20231f;
+  --muted: #666b63;
+  --accent: #2f6fd0;
+  --accent-soft: #e2ecfa;
+  --star: #d99a00;
+  --read: #8a8f86;
+  --ok: #2f9a5c;
+  /* Material's error color, as on Android */
+  --danger: #b3261e;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    color-scheme: dark;
+    --page: #151713;
+    --side: #20231d;
+    --panel: #1b1e19;
+    --line: #2d312a;
+    --text: #e6e8e2;
+    --muted: #9ba096;
+    --accent: #7aa8ee;
+    --accent-soft: #22324c;
+    --star: #f0be3a;
+    --read: #7d8279;
+    --ok: #5cc48a;
+    --danger: #f2b8b5;
+  }
+}
+
+@theme inline {
+  --color-page: var(--page);
+  --color-side: var(--side);
+  --color-panel: var(--panel);
+  --color-line: var(--line);
+  --color-ink: var(--text);
+  --color-muted: var(--muted);
+  --color-accent: var(--accent);
+  --color-accent-soft: var(--accent-soft);
+  --color-star: var(--star);
+  --color-ok: var(--ok);
+  --color-danger: var(--danger);
+  /* the account dot while syncing */
+  --animate-dot: dot-pulse 1.4s ease-in-out infinite;
+  --color-faded: var(--read);
+  --font-sans: "Public Sans Variable", ui-sans-serif, system-ui, sans-serif;
+  --font-serif: "Fraunces Variable", Georgia, serif;
+}
+
+html,
+body {
+  block-size: 100%;
+  background: var(--page);
+  color: var(--text);
+}
+
+body {
+  @apply font-sans;
+  /* the page reaches under a notch or home indicator (viewport-fit=cover); the bottom bars pad themselves */
+  padding-block-start: env(safe-area-inset-top);
+  padding-inline: env(safe-area-inset-left) env(safe-area-inset-right);
+}
+
+button,
+a,
+input,
+[tabindex] {
+  outline-color: var(--accent);
+}
+
+/* wide tables scroll sideways inside the article; a swipe that starts on one does not change article */
+/* biome-ignore lint/nursery/noUnusedClasses: added to article HTML by sanitize() */
+.table-scroll {
+  overflow-x: auto;
+}
+
+/* biome-ignore lint/nursery/noUnusedClasses: added to article HTML by sanitize() */
+.alt-text {
+  margin-block-start: 0.5rem;
+  padding-inline-start: 0.75rem;
+  border-inline-start: 2px solid var(--line);
+  color: var(--muted);
+  font-size: 0.9rem;
+  font-style: italic;
+}
+
+/* biome-ignore lint/nursery/noUnusedClasses: the typography plugin's class on article bodies */
+.prose {
+  /* the app's own colors, which already follow dark mode */
+  --tw-prose-body: var(--text);
+  --tw-prose-headings: var(--text);
+  --tw-prose-lead: var(--muted);
+  --tw-prose-links: var(--accent);
+  --tw-prose-bold: var(--text);
+  --tw-prose-counters: var(--muted);
+  --tw-prose-bullets: var(--muted);
+  --tw-prose-hr: var(--line);
+  --tw-prose-quotes: var(--muted);
+  --tw-prose-quote-borders: var(--line);
+  --tw-prose-captions: var(--muted);
+  --tw-prose-kbd: var(--text);
+  --tw-prose-code: var(--text);
+  --tw-prose-pre-code: var(--text);
+  --tw-prose-pre-bg: var(--side);
+  --tw-prose-th-borders: var(--line);
+  --tw-prose-td-borders: var(--line);
+}
+
+@keyframes dot-pulse {
+  50% {
+    opacity: 0.45;
+  }
+}

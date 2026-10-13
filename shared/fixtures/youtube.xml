@@ -1,0 +1,59 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<feed xmlns:yt="http://www.youtube.com/xml/schemas/2015" xmlns:media="http://search.yahoo.com/mrss/" xmlns="http://www.w3.org/2005/Atom">
+ <link rel="self" href="http://www.youtube.com/feeds/videos.xml?channel_id=UCexampleChannel01"/>
+ <id>yt:channel:exampleChannel01</id>
+ <yt:channelId>exampleChannel01</yt:channelId>
+ <title>Example Channel</title>
+ <link rel="alternate" href="https://www.youtube.com/channel/UCexampleChannel01"/>
+ <author>
+  <name>Example Channel</name>
+  <uri>https://www.youtube.com/channel/UCexampleChannel01</uri>
+ </author>
+ <published>2019-03-01T10:00:00+00:00</published>
+ <entry>
+  <id>yt:video:abcDEF12345</id>
+  <yt:videoId>abcDEF12345</yt:videoId>
+  <yt:channelId>UCexampleChannel01</yt:channelId>
+  <title>Building a Birdhouse &amp; Feeder</title>
+  <link rel="alternate" href="https://www.youtube.com/watch?v=abcDEF12345"/>
+  <author>
+   <name>Example Channel</name>
+   <uri>https://www.youtube.com/channel/UCexampleChannel01</uri>
+  </author>
+  <published>2026-10-05T15:00:06+00:00</published>
+  <updated>2026-10-06T01:12:44+00:00</updated>
+  <media:group>
+   <media:title>Building a Birdhouse &amp; Feeder</media:title>
+   <media:content url="https://www.youtube.com/v/abcDEF12345?version=3" type="application/x-shockwave-flash" width="640" height="390"/>
+   <media:thumbnail url="https://i1.ytimg.com/vi/abcDEF12345/hqdefault.jpg" width="480" height="360"/>
+   <media:description>Today we build a birdhouse.
+Tools &lt;cheap&gt; &amp; simple.
+
+Chapters:
+0:00 Intro</media:description>
+   <media:community>
+    <media:starRating count="120" average="5.00" min="1" max="5"/>
+    <media:statistics views="3456"/>
+   </media:community>
+  </media:group>
+ </entry>
+ <entry>
+  <id>yt:video:zyx98765432</id>
+  <yt:videoId>zyx98765432</yt:videoId>
+  <yt:channelId>UCexampleChannel01</yt:channelId>
+  <title>Short update</title>
+  <link rel="alternate" href="https://www.youtube.com/shorts/zyx98765432"/>
+  <author>
+   <name>Example Channel</name>
+   <uri>https://www.youtube.com/channel/UCexampleChannel01</uri>
+  </author>
+  <published>2026-10-03T09:30:00+00:00</published>
+  <updated>2026-10-03T09:30:00+00:00</updated>
+  <media:group>
+   <media:title>Short update</media:title>
+   <media:content url="https://www.youtube.com/v/zyx98765432?version=3" type="application/x-shockwave-flash" width="640" height="390"/>
+   <media:thumbnail url="http://i2.ytimg.com/vi/zyx98765432/hqdefault.jpg" width="480" height="360"/>
+   <media:description></media:description>
+  </media:group>
+ </entry>
+</feed>
