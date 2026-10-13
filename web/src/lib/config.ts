@@ -14,6 +14,9 @@ export const privacyUrl = "/privacy";
 /** The terms of service, a page of its own beside the app (`src/routes/(policy)/terms`), like the privacy policy. */
 export const termsUrl = "/terms";
 
+/** How to reach support, a page of its own beside the app (`src/routes/(policy)/contact`), like the privacy policy. */
+export const contactUrl = "/contact";
+
 /** The extension's Chrome Web Store listing page. */
 export const chromeWebStoreUrl =
   "https://chromewebstore.google.com/detail/ehmpednijaggcbpmjldkdookepbjindc";

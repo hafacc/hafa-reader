@@ -100,4 +100,5 @@
     <string name="share_failed">No app on this device can share that link.</string>
     <string name="privacy">Privacy</string>
     <string name="terms">Terms</string>
+    <string name="contact">Contact</string>
 </resources>
