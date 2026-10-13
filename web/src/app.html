@@ -1,0 +1,21 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <!-- First, so the content policy SvelteKit puts here (see vite.config.ts) governs everything below. -->
+    %sveltekit.head%
+    <meta
+      name="viewport"
+      content="width=device-width, initial-scale=1, viewport-fit=cover, interactive-widget=resizes-content"
+    >
+    <!-- Pictures, media and links in articles tell no site that this app is the reader. -->
+    <meta name="referrer" content="no-referrer">
+    <meta name="theme-color" content="#16233f">
+    <link rel="icon" href="/icon.svg" type="image/svg+xml">
+    <link rel="icon" href="/favicon-32.png" type="image/png" sizes="32x32">
+    <link rel="apple-touch-icon" href="/apple-touch-icon.png">
+  </head>
+  <body>
+    <div class="h-full">%sveltekit.body%</div>
+  </body>
+</html>

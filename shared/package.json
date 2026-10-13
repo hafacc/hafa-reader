@@ -1,0 +1,27 @@
+{
+  "private": true,
+  "name": "h-reader-shared",
+  "version": "0.1.0",
+  "description": "A simple local RSS reader with optional sync.",
+  "license": "MIT",
+  "author": "Erik Brinkman",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/hafacc/hafa-reader.git",
+    "directory": "shared"
+  },
+  "type": "module",
+  "scripts": {
+    "test": "bun test",
+    "lint": "tsc -p . && biome check --error-on-warnings",
+    "fmt": "biome check --write"
+  },
+  "dependencies": {
+    "fast-xml-parser": "^5.2.0"
+  },
+  "devDependencies": {
+    "@biomejs/biome": "^2.5.15",
+    "@types/bun": "^1.4.2",
+    "typescript": "~6.0.3"
+  }
+}
