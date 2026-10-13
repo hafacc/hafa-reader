@@ -1,0 +1,11 @@
+{
+  "extends": "$app/tsconfig",
+  "compilerOptions": {
+    "types": ["$app/types", "vite/client", "bun", "chrome"],
+    "strict": true,
+    "paths": { "$shared/*": ["../shared/src/*"] },
+    "allowImportingTsExtensions": true
+  },
+  "include": ["src", "scripts", "tests", "*"],
+  "exclude": ["src/service-worker.ts"]
+}

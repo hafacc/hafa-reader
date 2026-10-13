@@ -1,0 +1,123 @@
+rules_version = '2';
+
+// H Reader: each person's feeds, articles and view settings live under
+// users/{uid}; article text is shared under bodies/{hash}. See PLAN.md.
+//
+// The field lists and limits match the documents the clients write
+// (web/src/lib/sync/documents.ts, FIELD_LIMITS there, and the Android port in
+// android/core/.../sync/Documents.kt); a client cuts text to fit before
+// writing. Every write under users carries syncedAt set to the server time.
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    function owner(uid) {
+      return request.auth != null && request.auth.uid == uid;
+    }
+
+    function text(value, limit) {
+      return value is string && value.size() <= limit;
+    }
+
+    // Addresses, guids and other identifying text.
+    function address(value) {
+      return text(value, 8192);
+    }
+
+    function stampedNow(data) {
+      return data.syncedAt is timestamp && data.syncedAt == request.time;
+    }
+
+    function subscription(data) {
+      return data.keys().hasOnly(['url', 'title', 'folder', 'renamed', 'icon',
+          'siteUrl', 'updatedAt', 'deleted', 'syncedAt'])
+        && data.keys().hasAll(['url', 'title', 'folder', 'renamed', 'icon',
+          'siteUrl', 'updatedAt', 'deleted', 'syncedAt'])
+        && address(data.url)
+        && text(data.title, 2000)
+        && text(data.folder, 1000)
+        && data.renamed is bool
+        && address(data.icon)
+        && address(data.siteUrl)
+        && data.updatedAt is number
+        && data.deleted is bool
+        && stampedNow(data);
+    }
+
+    // Entries are written whole, or merged over a whole one, so every field
+    // but bodyHash and expireAt is present after the write.
+    function entry(data) {
+      return data.keys().hasOnly(['feedId', 'guid', 'title', 'published',
+          'dated', 'url', 'author', 'imageUrl', 'excerpt', 'summary',
+          'categories', 'bodyHash', 'read', 'starred', 'addedAt', 'updatedAt',
+          'expireAt', 'syncedAt'])
+        && data.keys().hasAll(['feedId', 'guid', 'title', 'published',
+          'dated', 'url', 'author', 'imageUrl', 'excerpt', 'summary',
+          'categories', 'read', 'starred', 'addedAt', 'updatedAt', 'syncedAt'])
+        && text(data.feedId, 128)
+        && address(data.guid)
+        && text(data.title, 2000)
+        && data.published is number
+        && data.dated is bool
+        && address(data.url)
+        && text(data.author, 1000)
+        && address(data.imageUrl)
+        && text(data.excerpt, 1000)
+        && text(data.summary, 20000)
+        && data.categories is list && data.categories.size() <= 100
+        && (!('bodyHash' in data) || text(data.bodyHash, 128))
+        && data.read is bool
+        && data.starred is bool
+        && data.addedAt is number
+        && data.updatedAt is number
+        && (!('expireAt' in data) || data.expireAt is timestamp)
+        && stampedNow(data);
+    }
+
+    function settings(data) {
+      return data.keys().hasOnly(['key', 'sort', 'hideWords', 'onlyWords',
+          'offTopics', 'updatedAt', 'deleted', 'syncedAt'])
+        && data.keys().hasAll(['key', 'sort', 'hideWords', 'onlyWords',
+          'offTopics', 'updatedAt', 'deleted', 'syncedAt'])
+        && text(data.key, 1100)
+        && data.sort in ['newest', 'oldest']
+        && data.hideWords is list && data.hideWords.size() <= 500
+        && data.onlyWords is list && data.onlyWords.size() <= 500
+        && data.offTopics is list && data.offTopics.size() <= 500
+        && data.updatedAt is number
+        && data.deleted is bool
+        && stampedNow(data);
+    }
+
+    // Only their owner, and nothing else under users/{uid}.
+    match /users/{uid}/subscriptions/{feedId} {
+      allow read, delete: if owner(uid);
+      allow create, update: if owner(uid) && subscription(request.resource.data);
+    }
+
+    match /users/{uid}/entries/{entryId} {
+      allow read, delete: if owner(uid);
+      allow create, update: if owner(uid) && entry(request.resource.data);
+    }
+
+    match /users/{uid}/settings/{settingsId} {
+      allow read, delete: if owner(uid);
+      allow create, update: if owner(uid) && settings(request.resource.data);
+    }
+
+    // Shared article text, stored under the hex SHA-256 of the text. Fetched
+    // one at a time by hash, never listed. Created once, never changed. The
+    // size cap matches BODY_MAX_CHARS in web/src/lib/sync/bodies.ts. An
+    // expireAt is allowed for finite retention (PLAN.md, History).
+    match /bodies/{hash} {
+      allow get: if request.auth != null;
+      allow create: if request.auth != null
+        && request.resource.data.keys().hasOnly(['text', 'expireAt'])
+        && request.resource.data.text is string
+        && (!('expireAt' in request.resource.data)
+          || request.resource.data.expireAt is timestamp)
+        && request.resource.data.text.size() <= 250000
+        && hashing.sha256(request.resource.data.text).toHexString().lower() == hash;
+      allow update, delete: if false;
+    }
+  }
+}
