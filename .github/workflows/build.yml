@@ -1,0 +1,131 @@
+name: build
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_call:
+    inputs:
+      only:
+        description: jobs to run, space separated; all of them when empty
+        type: string
+        default: ""
+
+permissions:
+  contents: read
+
+jobs:
+  # which of the jobs below run: on a pull request those whose folder it touches
+  # (all of them when it touches shared/ or the workflows), the caller's `only`
+  # when called, and otherwise all
+  changes:
+    runs-on: ubuntu-latest
+    permissions:
+      pull-requests: read # list the pull request's files
+    outputs:
+      web: ${{ steps.pick.outputs.web }}
+      extension: ${{ steps.pick.outputs.extension }}
+      shared: ${{ steps.pick.outputs.shared }}
+      android: ${{ steps.pick.outputs.android }}
+    steps:
+      - uses: dorny/paths-filter@ceb8a2b8f2d89434be7ff52d3de7ec3738c5cc9d # v4
+        id: touched
+        if: github.event_name == 'pull_request'
+        with:
+          filters: |
+            all:
+              - shared/**
+              - .github/workflows/**
+            web:
+              - web/**
+            extension:
+              - extension/**
+            android:
+              - android/**
+      - id: pick
+        env:
+          event: ${{ github.event_name }}
+          touched: ${{ steps.touched.outputs.changes }}
+          only: ${{ inputs.only }}
+        run: |
+          for job in web extension shared android; do
+            if [ "$event" = pull_request ]; then
+              run=$(jq --arg job "$job" 'any(. == $job or . == "all")' <<< "$touched")
+            elif [ -n "$only" ]; then
+              case " $only " in *" $job "*) run=true ;; *) run=false ;; esac
+            else
+              run=true
+            fi
+            echo "$job=$run" >> "$GITHUB_OUTPUT"
+          done
+
+  web:
+    needs: changes
+    if: needs.changes.outputs.web == 'true'
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: web
+    steps:
+      - uses: actions/checkout@v7
+      - uses: oven-sh/setup-bun@v2
+      # shared/src imports its own dependencies, which resolve from shared/node_modules
+      - run: bun install --frozen-lockfile
+        working-directory: shared
+      - run: bun install --frozen-lockfile
+      - run: bun lint
+      - run: bun test
+      - run: bun export
+
+  extension:
+    needs: changes
+    if: needs.changes.outputs.extension == 'true'
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: extension
+    steps:
+      - uses: actions/checkout@v7
+      - uses: oven-sh/setup-bun@v2
+      # shared/src imports its own dependencies, which resolve from shared/node_modules
+      - run: bun install --frozen-lockfile
+        working-directory: shared
+      - run: bun install --frozen-lockfile
+      - run: bun lint
+      - run: bun pack
+      - uses: actions/upload-artifact@v7
+        with:
+          name: h-reader-extension
+          path: extension/h-reader-extension.zip
+          if-no-files-found: error
+
+  shared:
+    needs: changes
+    if: needs.changes.outputs.shared == 'true'
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: shared
+    steps:
+      - uses: actions/checkout@v7
+      - uses: oven-sh/setup-bun@v2
+      - run: bun install --frozen-lockfile
+      - run: bun lint
+      - run: bun test
+
+  android:
+    needs: changes
+    if: needs.changes.outputs.android == 'true'
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: android
+    steps:
+      - uses: actions/checkout@v7
+      # gradle/gradle-daemon-jvm.properties asks for JDK 21
+      - uses: actions/setup-java@v6
+        with:
+          distribution: temurin
+          java-version: "21"
+      - uses: gradle/actions/setup-gradle@3f5f9adaf7d9fecd50b5935e54106014257a94e6 # v6
+      - run: ./gradlew :core:test :app:testDebugUnitTest :app:assembleDebug :app:lintDebug

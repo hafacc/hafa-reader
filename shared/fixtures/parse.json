@@ -1,0 +1,64 @@
+{
+  "version": 1,
+  "cases": [
+    {
+      "input": {
+        "file": "youtube.xml",
+        "feedUrl": "https://www.youtube.com/feeds/videos.xml?channel_id=UCexampleChannel01"
+      },
+      "output": {
+        "title": "Example Channel",
+        "siteUrl": "https://www.youtube.com/channel/UCexampleChannel01",
+        "iconUrl": "",
+        "entries": [
+          {
+            "guid": "yt:video:abcDEF12345",
+            "title": "Building a Birdhouse & Feeder",
+            "url": "https://www.youtube.com/watch?v=abcDEF12345",
+            "published": 1791212406000,
+            "author": "Example Channel",
+            "imageUrl": "https://i1.ytimg.com/vi/abcDEF12345/hqdefault.jpg",
+            "summary": "Today we build a birdhouse. Tools <cheap> & simple. Chapters: 0:00 Intro",
+            "categories": [],
+            "html": "Today we build a birdhouse.<br>Tools &lt;cheap&gt; &amp; simple.<br><br>Chapters:<br>0:00 Intro"
+          },
+          {
+            "guid": "yt:video:zyx98765432",
+            "title": "Short update",
+            "url": "https://www.youtube.com/shorts/zyx98765432",
+            "published": 1791019800000,
+            "author": "Example Channel",
+            "imageUrl": "https://i2.ytimg.com/vi/zyx98765432/hqdefault.jpg",
+            "summary": "",
+            "categories": [],
+            "html": ""
+          }
+        ]
+      }
+    },
+    {
+      "input": {
+        "file": "atom-media.xml",
+        "feedUrl": "https://photos.example.org/feed.xml"
+      },
+      "output": {
+        "title": "Photo Log",
+        "siteUrl": "https://photos.example.org/",
+        "iconUrl": "",
+        "entries": [
+          {
+            "guid": "tag:photos.example.org,2026:7",
+            "title": "Harbor at dawn",
+            "url": "https://photos.example.org/7",
+            "published": 1790922600000,
+            "author": "",
+            "imageUrl": "https://photos.example.org/7.jpg",
+            "summary": "Boats leaving early.",
+            "categories": [],
+            "html": "<p>The <b>full</b> story.</p>"
+          }
+        ]
+      }
+    }
+  ]
+}

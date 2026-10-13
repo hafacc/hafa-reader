@@ -1,0 +1,50 @@
+{
+  "indexes": [],
+  "fieldOverrides": [
+    {
+      "collectionGroup": "bodies",
+      "fieldPath": "text",
+      "indexes": []
+    },
+    {
+      "collectionGroup": "entries",
+      "fieldPath": "title",
+      "indexes": []
+    },
+    {
+      "collectionGroup": "entries",
+      "fieldPath": "excerpt",
+      "indexes": []
+    },
+    {
+      "collectionGroup": "entries",
+      "fieldPath": "summary",
+      "indexes": []
+    },
+    {
+      "collectionGroup": "entries",
+      "fieldPath": "categories",
+      "indexes": []
+    },
+    {
+      "collectionGroup": "entries",
+      "fieldPath": "guid",
+      "indexes": []
+    },
+    {
+      "collectionGroup": "entries",
+      "fieldPath": "url",
+      "indexes": []
+    },
+    {
+      "collectionGroup": "entries",
+      "fieldPath": "author",
+      "indexes": []
+    },
+    {
+      "collectionGroup": "entries",
+      "fieldPath": "imageUrl",
+      "indexes": []
+    }
+  ]
+}
