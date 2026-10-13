@@ -1,0 +1,23 @@
+{
+  "manifest_version": 3,
+  "name": "H Reader",
+  "version": "0.1.0",
+  "description": "Fetches feeds for H Reader and keeps them current in the background.",
+  "minimum_chrome_version": "119",
+  "permissions": ["alarms", "storage", "unlimitedStorage"],
+  "host_permissions": ["https://*/*"],
+  "background": {
+    "service_worker": "background.js",
+    "type": "module"
+  },
+  "externally_connectable": {
+    "matches": ["http://localhost/*", "https://reader.hafa.cc/*"]
+  },
+  "icons": {
+    "16": "icons/icon-16.png",
+    "32": "icons/icon-32.png",
+    "48": "icons/icon-48.png",
+    "128": "icons/icon-128.png"
+  },
+  "key": "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEA7FLBjhMl9jrN0+k8Mv1tgS/J+/i4tFYSXjpngOI89ba2EBuinUNsP3cAt3jqlyiP0HpY/1VP0Rmi0zeXMiqyIjjsawcYzUT/IyjCZ7SyP+asPf6Xryz9ELjByhkkMmE/Q+pDgZ3R8eNP+1hlcFfor1mgc0fCMq+mEk+B9+Q0LclYya3AycSjMRgx/qu+6q2VyGjKu5ePcCagQjrcIkp9UIWjHIej50rEvZfrzm2aSMmhF/d0xuj0ixru9srCqIUfNg4X9AIolJHQ+Di6kB+KPlXRXf2mJDCc5TaEyr5e4fEZTfKBg6rWsU7rqpJ7yiytSVd8CdBVZSmtWOrMHrnlhQIDAQAB"
+}

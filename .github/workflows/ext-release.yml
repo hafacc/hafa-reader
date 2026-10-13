@@ -1,0 +1,40 @@
+# Build a tagged version of the extension and attach it to a GitHub release; safe to rerun on the same tag.
+name: ext-release
+
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: release tag to publish (e.g. extension-v1.2.3)
+        required: true
+        type: string
+
+permissions:
+  contents: write # create the GitHub release
+
+defaults:
+  run:
+    working-directory: extension
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ inputs.tag }}
+      - uses: oven-sh/setup-bun@v2
+      - run: bun install --frozen-lockfile
+        working-directory: shared
+      - run: bun install --frozen-lockfile
+      - run: bun pack
+      - name: create release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          tag: ${{ inputs.tag }}
+        run: |
+          if gh release view "$tag" > /dev/null 2>&1; then
+            gh release upload "$tag" h-reader-extension.zip --clobber
+          else
+            gh release create "$tag" --generate-notes --verify-tag h-reader-extension.zip
+          fi

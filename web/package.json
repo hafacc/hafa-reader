@@ -1,0 +1,49 @@
+{
+  "private": true,
+  "name": "h-reader-web",
+  "version": "0.1.0",
+  "description": "The H Reader web app: an RSS reader.",
+  "license": "MIT",
+  "author": "Erik Brinkman",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/hafacc/hafa-reader.git",
+    "directory": "web"
+  },
+  "homepage": "https://reader.hafa.cc/",
+  "type": "module",
+  "scripts": {
+    "dev": "vite dev",
+    "export": "vite build",
+    "preview": "vite preview",
+    "test": "bun test",
+    "lint": "svelte-kit sync && svelte-check --fail-on-warnings && biome check --error-on-warnings",
+    "fmt": "biome check --write"
+  },
+  "devDependencies": {
+    "@biomejs/biome": "^2.5.15",
+    "@fontsource-variable/fraunces": "^5.3.0",
+    "@fontsource-variable/public-sans": "^5.3.0",
+    "@happy-dom/global-registrator": "^21.0.1",
+    "@lucide/svelte": "^1.55.0",
+    "@sveltejs/adapter-static": "^4.0.0",
+    "@sveltejs/kit": "^3.0.1",
+    "@sveltejs/vite-plugin-svelte": "^7.3.1",
+    "@tailwindcss/typography": "^0.5.20",
+    "@tailwindcss/vite": "^4.3.3",
+    "@types/bun": "^1.4.2",
+    "@types/chrome": "^0.3.5",
+    "dompurify": "^3.4.16",
+    "fake-indexeddb": "^6.2.5",
+    "firebase": "^13.0.0",
+    "happy-dom": "^21.0.1",
+    "svelte": "^5.57.1",
+    "svelte-check": "^4.7.6",
+    "tailwindcss": "^4.3.3",
+    "typescript": "~6.0.3",
+    "vite": "^8.3.3"
+  },
+  "imports": {
+    "#lib/*": "./src/lib/*"
+  }
+}

@@ -1,0 +1,3 @@
+[test]
+# a browser-like DOM, IndexedDB, and Svelte runes in .svelte.ts modules
+preload = ["./tests/setup.ts"]
