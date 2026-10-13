@@ -1,0 +1,31 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- The sleeping dot shown when a list is empty: the logo's amber dot with closed eyes and faint waves. Brand colors, the same in light and dark. -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="160dp"
+    android:height="120dp"
+    android:viewportWidth="240"
+    android:viewportHeight="180">
+    <path
+        android:pathData="M98,78 A46,46 0 0,1 144,124"
+        android:strokeColor="#8FB4EC"
+        android:strokeAlpha="0.45"
+        android:strokeWidth="9"
+        android:strokeLineCap="round"
+        android:strokeLineJoin="round" />
+    <path
+        android:pathData="M98,56 A68,68 0 0,1 166,124"
+        android:strokeColor="#8FB4EC"
+        android:strokeAlpha="0.25"
+        android:strokeWidth="9"
+        android:strokeLineCap="round"
+        android:strokeLineJoin="round" />
+    <path
+        android:pathData="M72,124 A26,26 0 1,0 124,124 A26,26 0 1,0 72,124 Z"
+        android:fillColor="#F39A1E" />
+    <path
+        android:pathData="M85.25,122 H91.75 A2.25,2.25 0 0,1 91.75,126.5 H85.25 A2.25,2.25 0 0,1 85.25,122 Z"
+        android:fillColor="#16233F" />
+    <path
+        android:pathData="M104.25,122 H110.75 A2.25,2.25 0 0,1 110.75,126.5 H104.25 A2.25,2.25 0 0,1 104.25,122 Z"
+        android:fillColor="#16233F" />
+</vector>

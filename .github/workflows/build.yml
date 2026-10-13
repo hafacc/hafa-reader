@@ -26,6 +26,7 @@ jobs:
       web: ${{ steps.pick.outputs.web }}
       extension: ${{ steps.pick.outputs.extension }}
       shared: ${{ steps.pick.outputs.shared }}
+      android: ${{ steps.pick.outputs.android }}
     steps:
       - uses: dorny/paths-filter@ceb8a2b8f2d89434be7ff52d3de7ec3738c5cc9d # v4
         id: touched
@@ -39,13 +40,15 @@ jobs:
               - web/**
             extension:
               - extension/**
+            android:
+              - android/**
       - id: pick
         env:
           event: ${{ github.event_name }}
           touched: ${{ steps.touched.outputs.changes }}
           only: ${{ inputs.only }}
         run: |
-          for job in web extension shared; do
+          for job in web extension shared android; do
             if [ "$event" = pull_request ]; then
               run=$(jq --arg job "$job" 'any(. == $job or . == "all")' <<< "$touched")
             elif [ -n "$only" ]; then
@@ -109,3 +112,20 @@ jobs:
       - run: bun install --frozen-lockfile
       - run: bun lint
       - run: bun test
+
+  android:
+    needs: changes
+    if: needs.changes.outputs.android == 'true'
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: android
+    steps:
+      - uses: actions/checkout@v7
+      # gradle/gradle-daemon-jvm.properties asks for JDK 21
+      - uses: actions/setup-java@v6
+        with:
+          distribution: temurin
+          java-version: "21"
+      - uses: gradle/actions/setup-gradle@3f5f9adaf7d9fecd50b5935e54106014257a94e6 # v6
+      - run: ./gradlew :core:test :app:testDebugUnitTest :app:assembleDebug :app:lintDebug
