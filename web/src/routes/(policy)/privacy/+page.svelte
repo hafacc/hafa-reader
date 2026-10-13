@@ -117,12 +117,13 @@
     uninstalling the Android app removes what that device stored.
   </li>
   <li>
-    To delete your account, sign in on the web or in the Android app, open the
-    sync section and press Delete account twice. It removes your feeds,
-    articles, read and starred marks and settings from your account, and your
-    Google sign-in from Reader, then signs you out. What is on your device stays
-    until you remove it as above. Shared article text holds nothing about you
-    and stays.
+    To delete your account, open Sync in the web app or the account screen in
+    the Android app and press Delete account twice, or use the
+    <a href="/delete">delete account page</a>
+    in any browser. It removes your feeds, articles, read and starred marks and
+    settings from your account, and your Google sign-in from Reader, then signs
+    you out. What is on your device stays until you remove it as above. Shared
+    article text holds nothing about you and stays.
   </li>
   <li>
     You can remove Reader's access to your Google account at any time at
