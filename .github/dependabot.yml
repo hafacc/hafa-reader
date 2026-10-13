@@ -9,3 +9,8 @@ updates:
     directories: [/web, /extension, /shared]
     schedule:
       interval: monthly
+
+  - package-ecosystem: gradle
+    directory: /android
+    schedule:
+      interval: monthly
