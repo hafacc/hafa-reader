@@ -26,6 +26,9 @@ object SyncConfig {
     /** The terms of service. */
     const val TERMS_URL = "https://reader.hafa.cc/terms"
 
+    /** The contact page. */
+    const val CONTACT_URL = "https://reader.hafa.cc/contact"
+
     /** Firebase options from the values above. */
     fun firebaseOptions(): FirebaseOptions =
         FirebaseOptions.Builder()

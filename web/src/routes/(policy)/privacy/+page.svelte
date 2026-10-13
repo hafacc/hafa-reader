@@ -136,6 +136,7 @@
 <h2>Contact</h2>
 <ul>
   <li>
-    <a href="mailto:support@reader.hafa.cc">support@reader.hafa.cc</a>
+    <a href="mailto:support@reader.hafa.cc">support@reader.hafa.cc</a>, or see
+    the <a href="/contact">contact page</a>.
   </li>
 </ul>

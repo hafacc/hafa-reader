@@ -293,12 +293,14 @@ private fun Note(text: AnnotatedString) {
     Text(text, fontSize = 14.sp, lineHeight = 20.sp, color = ReaderTheme.colors.muted)
 }
 
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 private fun Policies() {
     val links = LocalUriHandler.current
     val colors = ReaderTheme.colors
-    Row(Modifier.fillMaxWidth().padding(top = 12.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-        for ((label, address) in listOf(R.string.privacy to SyncConfig.PRIVACY_URL, R.string.terms to SyncConfig.TERMS_URL)) {
+    FlowRow(Modifier.fillMaxWidth().padding(top = 12.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        val pages = listOf(R.string.privacy to SyncConfig.PRIVACY_URL, R.string.terms to SyncConfig.TERMS_URL, R.string.contact to SyncConfig.CONTACT_URL)
+        for ((label, address) in pages) {
             TextButton(onClick = { links.openUri(address) }, colors = ButtonDefaults.textButtonColors(contentColor = colors.muted)) {
                 Text(stringResource(label), textDecoration = TextDecoration.Underline)
             }

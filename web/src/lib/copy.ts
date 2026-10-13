@@ -173,4 +173,6 @@ export const copy = {
   privacy: "Privacy",
   /** Link to the terms of service. */
   terms: "Terms",
+  /** Link to the contact page. */
+  contact: "Contact",
 };

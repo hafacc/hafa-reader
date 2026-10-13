@@ -3,7 +3,7 @@
   import LogIn from "@lucide/svelte/icons/log-in";
   import LogOut from "@lucide/svelte/icons/log-out";
   import X from "@lucide/svelte/icons/x";
-  import { privacyUrl, termsUrl } from "#lib/config.ts";
+  import { contactUrl, privacyUrl, termsUrl } from "#lib/config.ts";
   import { copy } from "#lib/copy.ts";
   import type { Reader } from "#lib/reader.svelte.ts";
   import { type Retention, retentionFromDays } from "#lib/sync/documents.ts";
@@ -237,6 +237,9 @@
             >{copy.privacy}</a
           >
           <a class="underline hover:text-ink" href={termsUrl}>{copy.terms}</a>
+          <a class="underline hover:text-ink" href={contactUrl}
+            >{copy.contact}</a
+          >
         </p>
       </section>
 
