@@ -90,15 +90,39 @@ interface ReaderPreferences {
 
     /** Key of the last view shown; see [viewKey]. */
     var lastView: String
+
+    /** The font for article text and titles on this device; not synced. */
+    var readingFont: ReadingFont
+}
+
+/** The font for article text and titles; the rest of the interface stays in Public Sans. */
+enum class ReadingFont {
+    /** Literata, the default. */
+    Literata,
+
+    /** Public Sans, the interface's own face. */
+    PublicSans,
 }
 
 /** How an OPML import went. */
 data class ImportResult(
-    /** Feeds the file lists. */
+    /** Feeds the file lists with a web address. */
     val found: Int,
-    /** How many of them were new. */
+    /** How many of them were new and added. */
     val added: Int,
+    /** Plain http feeds left out because no https version was found. */
+    val skipped: Int = 0,
 )
+
+/** A feed with the http problem when its address is plain http, and without it otherwise. */
+fun markedHttp(feed: Feed): Feed =
+    if (isPlainHttp(feed.url)) {
+        feed.copy(error = FeedProblem.HttpFeed.code)
+    } else if (feed.error == FeedProblem.HttpFeed.code) {
+        feed.copy(error = "")
+    } else {
+        feed
+    }
 
 /** Shortest time the refreshing marks stay on, so a quick check is still seen. */
 private const val MIN_REFRESH_MS = 700L
@@ -110,12 +134,13 @@ fun hasScheme(text: String): Boolean = SCHEME_PATTERN.containsMatchIn(text)
 
 /**
  * What a person typed or a file listed, as an address: https added when no
- * scheme is given, plain http upgraded to https, and empty when it is not a
- * web address; the same text the web app makes of it, so feed ids match.
+ * scheme is given, plain http kept as http (so it can be refused or tried
+ * over https), and empty when it is not a web address; the same text the web
+ * app makes of it, so feed ids match.
  */
 fun normalizeUrl(input: String): String {
     val trimmed = jsTrim(input)
-    return upgradedAddress(if (hasScheme(trimmed)) trimmed else "https://$trimmed")
+    return webAddress(if (hasScheme(trimmed)) trimmed else "https://$trimmed")
 }
 
 private val logger: Logger = Logger.getLogger("cc.hafa.reader")
@@ -155,6 +180,8 @@ private fun hostOf(address: String): String = address.toHttpUrlOrNull()?.host ?:
  * a read article stays listed until the view changes or feeds are refreshed;
  * marking an open article unread by hand sticks when it is left. The sidebar
  * order is worked out at load and after each refresh, and held in between.
+ * Articles and feeds that arrive in the background wait for the lists to be
+ * settled (see [settle]), so rows never move under the person.
  *
  * [savingData] says whether the device asks to save data (Data Saver on
  * Android); then no neighbor's body is downloaded and no picture fetched ahead.
@@ -179,6 +206,10 @@ class ReaderModel(
     private val writes = Channel<suspend () -> Unit>(Channel.UNLIMITED)
     private val manual: MutableSet<String> = ConcurrentHashMap.newKeySet()
     private val iconsTried: MutableSet<String> = ConcurrentHashMap.newKeySet()
+    // Plain http feeds tried over https since the reader started with a definite answer, or being tried, by id.
+    private val httpTried: MutableSet<String> = ConcurrentHashMap.newKeySet()
+    // Tries of each plain http feed's https address that got no definite answer since the reader started, by id.
+    private val httpMisses = ConcurrentHashMap<String, Int>()
     private val applyLock = Mutex()
     // Held around every change to the feeds and the save it queues, so edits and check results never overwrite each other.
     private val feedEdits = Any()
@@ -248,7 +279,14 @@ class ReaderModel(
         override suspend fun clear() = clearLocal()
     }
 
-    private val queue = CheckQueue(scope, clock, ::entryFeed, ::checkFeed, ::applyChecks)
+    private val queue = CheckQueue(
+        scope,
+        clock,
+        ::entryFeed,
+        ::checkFeed,
+        ::applyChecks,
+        onBusy = { busy -> update { current -> current.copy(checking = busy) } },
+    )
 
     init {
         scope.launch {
@@ -269,7 +307,12 @@ class ReaderModel(
     suspend fun load() {
         loadLock.withLock {
             if (!state.value.loaded) {
-                val feeds = store.loadFeeds()
+                val stored = store.loadFeeds()
+                val feeds = stored.map(::markedHttp)
+                val remarked = feeds.filterIndexed { index, feed -> feed != stored[index] }
+                if (remarked.isNotEmpty()) {
+                    persist { store.putFeeds(remarked) }
+                }
                 val entries = store.loadEntries()
                 val saved = store.loadSettings()
                 val settings = saved.mapValues { (_, item) -> item.settings }
@@ -317,6 +360,7 @@ class ReaderModel(
             first.entries === second.entries && first.feeds === second.feeds &&
                 first.settings === second.settings && first.pinned === second.pinned &&
                 first.heldTopics === second.heldTopics && first.frozenRank === second.frozenRank &&
+                first.heldEntries === second.heldEntries && first.heldFeeds === second.heldFeeds &&
                 first.selection == second.selection && first.unreadOnly == second.unreadOnly &&
                 first.currentId == second.currentId
             )
@@ -330,18 +374,80 @@ class ReaderModel(
             if (before.currentId.isNotEmpty()) {
                 close()
             }
-            update { current -> current.copy(pinned = emptySet(), heldTopics = emptyMap()) }
+            update { current -> current.copy(pinned = emptySet(), heldTopics = emptyMap(), heldEntries = current.heldEntries?.let { current.entryIds() }) }
         }
         preferences.lastView = viewKey(chosen)
     }
 
     /** Turn the unread-only switch on or off, and remember it; turning it on closes an open article already read. */
     fun setUnreadOnly(next: Boolean) {
-        update { current -> current.copy(unreadOnly = next, pinned = emptySet(), heldTopics = emptyMap()) }
+        update { current ->
+            current.copy(
+                unreadOnly = next,
+                pinned = emptySet(),
+                heldTopics = emptyMap(),
+                heldEntries = current.heldEntries?.let { current.entryIds() },
+                heldFeeds = current.heldFeeds?.let { current.feedIds() },
+            )
+        }
         if (next && entryById(state.value.currentId)?.read == true) {
             close()
         }
         preferences.unreadOnly = next
+    }
+
+    /**
+     * Let everything that has arrived into the lists, as when the loading
+     * screen lets the person in and after a refresh: the article list and the
+     * sidebar take in new articles and feeds, and the sidebar's order is
+     * worked out again.
+     */
+    fun settle() {
+        update { current ->
+            current.copy(
+                frozenRank = frozenRankOf(current.feeds, current.entries, current.settings),
+                heldEntries = current.entryIds(),
+                heldFeeds = current.feedIds(),
+            )
+        }
+    }
+
+    private fun ReaderState.entryIds(): Set<String> = entries.mapTo(HashSet()) { entry -> entry.id }
+
+    private fun ReaderState.feedIds(): Set<String> = feeds.mapTo(HashSet()) { feed -> feed.id }
+
+    /**
+     * [next], which adds what arrived in the background to [current], with the
+     * lists held: a feed the sidebar does not list now stays out until it is
+     * next settled, so what arrives adds no rows, while a list or sidebar that
+     * showed nothing takes it in, since no row can move.
+     */
+    private fun heldArrival(current: ReaderState, next: ReaderState): ReaderState {
+        val listShowed = viewOf(current).visible.isNotEmpty()
+        val unread = unreadCounts(current.entries, current.feeds, current.settings).byFeed
+        val listedNow = current.feeds.filter { feed -> feedListed(current, unread, feed) }
+        val sidebarEmpty = listedNow.isEmpty()
+        return next.copy(
+            heldEntries = if (current.heldEntries != null && !listShowed) next.entryIds() else next.heldEntries,
+            heldFeeds = if (current.heldFeeds == null) {
+                null
+            } else if (sidebarEmpty) {
+                next.feedIds()
+            } else {
+                listedNow.mapTo(HashSet()) { feed -> feed.id }
+            },
+            frozenRank = if (current.heldFeeds != null && sidebarEmpty) frozenRankOf(next.feeds, next.entries, next.settings) else next.frozenRank,
+        )
+    }
+
+    /** Show what the person just added: the list takes in every article that has arrived, and the sidebar lists the feed. */
+    private fun reveal(feedId: String) {
+        update { current ->
+            current.copy(
+                heldEntries = current.heldEntries?.let { current.entryIds() },
+                heldFeeds = current.heldFeeds?.let { held -> held + feedId },
+            )
+        }
     }
 
     /** Change the current view's settings and save them. */
@@ -656,30 +762,13 @@ class ReaderModel(
         if (open.unreadOnly && open.selection != Selection.Starred && entryById(open.currentId)?.read == true) {
             close()
         }
+        if (state.value.feeds.any { feed -> isPlainHttp(feed.url) && feed.id !in httpTried }) {
+            scope.launch { upgradeHttpFeeds() }
+        }
         val started = clock()
         try {
-            val now = clock()
-            val chosen = state.value.feeds.filter { feed -> feedIds.isEmpty() || feed.id in feedIds }
-            val requests = if (chosen.size <= SMALL_REFRESH) {
-                chosen.map { feed -> CheckRequest(feed.id, 1.0, foreground = true, timeoutMs = FOREGROUND_TIMEOUT_MS) }
-            } else {
-                val plan = planRefresh(chosen, now) { feed -> feed.schedule }
-                plan.ordered.mapIndexed { index, feed ->
-                    val waited = index < plan.foreground
-                    CheckRequest(
-                        feed.id,
-                        plan.probabilities[index],
-                        foreground = waited,
-                        timeoutMs = if (waited) FOREGROUND_TIMEOUT_MS else FETCH_TIMEOUT_MS,
-                    )
-                }
-            }
-            val checks = queue.enqueue(requests)
-            checks.filter { (_, request) -> request.foreground }.forEach { (check, _) -> check.settled.await() }
-            if (queue.busy()) {
-                onBackgroundWork()
-            }
-            update { current -> current.copy(frozenRank = frozenRankOf(current.feeds, current.entries, current.settings)) }
+            checkNow(feedIds)
+            settle()
         } finally {
             try {
                 val remaining = minRefreshMillis - (clock() - started)
@@ -692,26 +781,74 @@ class ReaderModel(
         }
     }
 
+    /**
+     * Check feeds now (every feed when [feedIds] is empty) and wait for the
+     * first ones (see [planRefresh]), showing nothing while they are checked.
+     */
+    private suspend fun checkNow(feedIds: List<String>) {
+        val now = clock()
+        // a plain http feed is never fetched; its https address is tried apart from the schedule
+        val chosen = state.value.feeds.filter { feed -> (feedIds.isEmpty() || feed.id in feedIds) && !isPlainHttp(feed.url) }
+        val requests = if (chosen.size <= SMALL_REFRESH) {
+            chosen.map { feed -> CheckRequest(feed.id, 1.0, foreground = true, timeoutMs = FOREGROUND_TIMEOUT_MS) }
+        } else {
+            val plan = planRefresh(chosen, now) { feed -> feed.schedule }
+            plan.ordered.mapIndexed { index, feed ->
+                val waited = index < plan.foreground
+                CheckRequest(
+                    feed.id,
+                    plan.probabilities[index],
+                    foreground = waited,
+                    timeoutMs = if (waited) FOREGROUND_TIMEOUT_MS else FETCH_TIMEOUT_MS,
+                )
+            }
+        }
+        val checks = queue.enqueue(requests)
+        checks.filter { (_, request) -> request.foreground }.forEach { (check, _) -> check.settled.await() }
+        if (queue.busy()) {
+            onBackgroundWork()
+        }
+    }
+
     /** Check the feeds in the current view now. */
     suspend fun refreshView() {
         refresh(view().viewFeedIds)
     }
 
+    /**
+     * Start the checks the app makes when it opens, without waiting for them:
+     * load, try plain http feeds over https, and queue the feeds whose schedule
+     * says they are due. Nothing shows as refreshing, the list keeps its rows
+     * and the sidebar keeps the order worked out at load.
+     */
+    suspend fun openChecks() {
+        load()
+        if (state.value.feeds.any { feed -> isPlainHttp(feed.url) && feed.id !in httpTried }) {
+            scope.launch { upgradeHttpFeeds() }
+        }
+        queue.enqueue(dueRequests(clock()))
+        if (queue.busy()) {
+            onBackgroundWork()
+        }
+    }
+
     /** Check the feeds whose schedule says they are due, through the same queue, and wait until they are saved. */
     suspend fun refreshDue() {
         val now = clock()
-        val due = state.value.loaded || store.loadFeeds().any { feed -> feed.schedule.nextFetch <= now }
-        if (!due) {
-            return
+        val due = state.value.loaded || store.loadFeeds().any { feed -> feed.schedule.nextFetch <= now && !isPlainHttp(feed.url) }
+        if (due) {
+            load()
+            queue.enqueue(dueRequests(now)).forEach { (check, _) -> check.stored.await() }
         }
-        load()
-        val requests = state.value.feeds
-            .filter { feed -> feed.schedule.nextFetch <= now }
+    }
+
+    /** Background checks of the feeds due at [now]; plain http feeds are never due. */
+    private fun dueRequests(now: Long): List<CheckRequest> =
+        state.value.feeds
+            .filter { feed -> feed.schedule.nextFetch <= now && !isPlainHttp(feed.url) }
             .map { feed ->
                 CheckRequest(feed.id, refreshProbability(feed.schedule, now), foreground = false, timeoutMs = FETCH_TIMEOUT_MS)
             }
-        queue.enqueue(requests).forEach { (check, _) -> check.stored.await() }
-    }
 
     /** Wait until every queued check, including those a refresh left to the background, is saved. */
     suspend fun awaitChecks() {
@@ -728,13 +865,25 @@ class ReaderModel(
         update { current -> current.copy(adding = true) }
         try {
             val start = normalizeUrl(input)
-            if (start.toHttpUrlOrNull()?.isHttps != true) {
+            if (isPlainHttp(start)) {
+                throw FeedProblemException(FeedProblem.HttpRefused)
+            } else if (start.toHttpUrlOrNull()?.isHttps != true) {
                 throw FeedProblemException(FeedProblem.NotWebAddress)
             }
             val found = discover(start)
             val id = feedId(found.url)
-            val feed = if (state.value.feeds.none { feed -> feed.id == id }) {
-                Feed(
+            val addresses = listOf(found.url)
+            val existing = followed(state.value.feeds, id, addresses)
+            val plain = plainAddress(found.url)
+            // a feed followed at the plain http form of this address moves here when it is the same feed; a different one stays as it is
+            val atHttp = state.value.feeds.firstOrNull { feed -> feed.url == plain && sameFeed(knownOf(feed), found.parsed) }
+            if (existing != null) {
+                select(Selection.FeedView(existing.id))
+            } else if (atHttp != null) {
+                moveToHttps(listOf(atHttp to HttpsMatch(found.url, found.parsed, found.outcome)))
+                select(Selection.FeedView(atHttp.id))
+            } else {
+                val feed = Feed(
                     id = id,
                     url = found.url,
                     title = found.parsed.title.ifEmpty { hostOf(found.url) },
@@ -745,70 +894,85 @@ class ReaderModel(
                     error = "",
                     updatedAt = clock(),
                 )
-            } else {
-                null
-            }
-            // The same feed may have come from the account while the site was being looked up.
-            val added = feed != null && synchronized(feedEdits) {
-                var fresh = false
-                update { current ->
-                    fresh = current.feeds.none { known -> known.id == id }
-                    if (fresh) current.copy(feeds = current.feeds + feed) else current
+                // The same feed may have come from the account while the site was being looked up.
+                val added = synchronized(feedEdits) {
+                    var fresh = false
+                    update { current ->
+                        fresh = followed(current.feeds, id, addresses) == null
+                        if (fresh) current.copy(feeds = current.feeds + feed) else current
+                    }
+                    if (fresh) {
+                        persist { store.putFeeds(listOf(feed)) }
+                    }
+                    fresh
                 }
-                if (fresh) {
-                    persist { store.putFeeds(listOf(feed)) }
+                if (added) {
+                    forget(listOf("$FEED_TOMBSTONE$id"))
+                    sendToSync(LocalChange(feeds = listOf(feed)))
+                    val now = clock()
+                    val result = withContext(workDispatcher) { checkOutcome(feed.schedule, feed.url, found.outcome, now) }
+                    // the sidebar keeps its order, with the new feed last, until the next refresh
+                    applyChecks(listOf(FinishedCheck(feed, result, now)))
                 }
-                fresh
+                select(Selection.FeedView(followed(state.value.feeds, id, addresses)?.id ?: id))
             }
-            if (feed != null && added) {
-                forget(listOf("$FEED_TOMBSTONE$id"))
-                sendToSync(LocalChange(feeds = listOf(feed)))
-                val now = clock()
-                val result = withContext(workDispatcher) { checkOutcome(feed.schedule, feed.url, found.outcome, now) }
-                // the sidebar keeps its order, with the new feed last, until the next refresh
-                applyChecks(listOf(FinishedCheck(feed, result, now)))
+            val shown = state.value.selection
+            if (shown is Selection.FeedView) {
+                reveal(shown.id)
             }
-            select(Selection.FeedView(id))
         } finally {
             update { current -> current.copy(adding = false) }
         }
     }
 
     /**
-     * Subscribe to every feed in an OPML file and start checking them. Returns
-     * how many feeds the file lists and how many of them were new.
+     * Subscribe to every feed in an OPML file and start checking them: into
+     * [group] when given (empty for no group), else into the file's own
+     * folders. A plain http feed is tried over https and added there when it
+     * serves the same feed; otherwise it is left out. Returns how many feeds
+     * the file lists, how many of them were new, and how many http feeds were
+     * left out.
      */
-    suspend fun importOpml(source: String): ImportResult {
+    suspend fun importOpml(source: String, group: String? = null): ImportResult {
         load()
         update { current -> current.copy(adding = true) }
         try {
-            return importParsed(withContext(workDispatcher) { prepareImport(source) })
+            val listed = withContext(workDispatcher) {
+                parseOpml(source).mapNotNull { item -> normalizeUrl(item.url).ifEmpty { null }?.let { url -> item.copy(url = url) } }
+            }
+            val following = state.value.feeds.mapTo(HashSet()) { feed -> feed.url }
+            val resolved = mapConcurrently(listed, PROBE_CONCURRENCY) { item ->
+                val secure = upgradedAddress(item.url)
+                val url = if (isPlainHttp(item.url) && item.url !in following && secure !in following) {
+                    probe(KnownFeed(item.url, item.title, item.siteUrl)).match?.url ?: ""
+                } else {
+                    secure
+                }
+                item to url
+            }
+            return importResolved(resolved, group)
         } finally {
             update { current -> current.copy(adding = false) }
         }
     }
 
-    /** OPML feeds with web addresses, each with its id. */
-    private fun prepareImport(source: String): List<Pair<OpmlFeed, String>> =
-        parseOpml(source)
-            .map { item -> item.copy(url = normalizeUrl(item.url)) }
-            .filter { item -> item.url.toHttpUrlOrNull() != null }
-            .map { item -> item to feedId(item.url) }
-
-    private fun importParsed(items: List<Pair<OpmlFeed, String>>): ImportResult {
-        val known = state.value.feeds.mapTo(HashSet()) { feed -> feed.id }
+    /** Add listed feeds, each with the https address it resolved to (empty when none was found). */
+    private fun importResolved(items: List<Pair<OpmlFeed, String>>, group: String?): ImportResult {
+        val usable = items.filter { (_, url) -> url.toHttpUrlOrNull()?.isHttps == true }
+        val feeds = state.value.feeds
         val added = mutableListOf<Feed>()
-        for ((item, id) in items) {
-            if (known.add(id)) {
+        for ((item, url) in usable) {
+            val id = feedId(url)
+            if (followed(feeds, id, listOf(url, item.url)) == null && added.none { feed -> feed.id == id }) {
                 added.add(
                     Feed(
                         id = id,
-                        url = item.url,
-                        title = item.title.ifEmpty { hostOf(item.url) },
-                        siteUrl = "",
-                        icon = faviconFor(item.url),
+                        url = url,
+                        title = item.title.ifEmpty { hostOf(url) },
+                        siteUrl = upgradedAddress(item.siteUrl),
+                        icon = faviconFor(url),
                         renamed = false,
-                        folder = item.folder.trim(),
+                        folder = (group ?: item.folder).trim(),
                         error = "",
                         updatedAt = clock(),
                     ),
@@ -824,20 +988,137 @@ class ReaderModel(
         }
         forget(added.map { feed -> "$FEED_TOMBSTONE${feed.id}" })
         sendToSync(LocalChange(feeds = added))
-        scope.launch { refresh() }
-        return ImportResult(found = items.size, added = added.size)
+        if (added.isNotEmpty()) {
+            // The loading screen holds the person until the new feeds' first check is in.
+            update { current -> current.copy(importing = current.importing + 1) }
+            scope.launch {
+                try {
+                    checkNow(added.map { feed -> feed.id })
+                } finally {
+                    update { current -> current.copy(importing = current.importing - 1) }
+                }
+            }
+        }
+        return ImportResult(found = items.size, added = added.size, skipped = items.size - usable.size)
     }
 
-    /** Search Feedly for feeds about [query]; empty when nothing is found or it does not answer. */
+    /**
+     * Search Feedly for feeds about [query]; empty when nothing is found or it
+     * does not answer. A plain http result is shown at its https address only
+     * when that serves the same feed, and left out otherwise.
+     */
     suspend fun searchFeeds(query: String): List<FeedHit> {
         update { current -> current.copy(adding = true) }
         try {
             val outcome = fetcher.fetch(feedSearchAddress(query), "", "")
-            return if (outcome.status == 200) withContext(workDispatcher) { parseFeedSearch(outcome.text) } else emptyList()
+            val found = if (outcome.status == 200) withContext(workDispatcher) { parseFeedSearch(outcome.text) } else emptyList()
+            val checked = mapConcurrently(found, PROBE_CONCURRENCY) { hit ->
+                if (isPlainHttp(hit.url)) hit.copy(url = probe(KnownFeed(hit.url, hit.title, hit.siteUrl)).match?.url ?: "") else hit
+            }
+            return checked.filter { hit -> hit.url.isNotEmpty() }.distinctBy { hit -> hit.url }
         } finally {
             update { current -> current.copy(adding = false) }
         }
     }
+
+    /** What one try of a plain http feed at its https address found. */
+    private data class Probe(
+        /** The https address found to serve the same feed; null when none. */
+        val match: HttpsMatch?,
+        /** Whether the answer settles the question, so a failure that does not is tried again later. */
+        val settled: Boolean,
+    )
+
+    /** Try a plain http feed at its https address. */
+    private suspend fun probe(known: KnownFeed): Probe = withContext(workDispatcher) {
+        var answer: FetchOutcome? = null
+        val match = probeHttps(known) { url, etag, lastModified, timeoutMs ->
+            fetcher.fetch(url, etag, lastModified, timeoutMs).also { outcome -> answer = outcome }
+        }
+        // an address that may not be tried never will be, so there is nothing to wait for
+        Probe(match, match != null || !probeAllowed(known.url) || settledAnswer(answer))
+    }
+
+    /** What is known of a followed feed to tell it from another; a name the person gave is not the feed's own. */
+    private fun knownOf(feed: Feed): KnownFeed {
+        val held = state.value.entries.filter { entry -> entry.feedId == feed.id }
+        return KnownFeed(feed.url, if (feed.renamed) "" else feed.title, feed.siteUrl, held.map { entry -> entry.guid }, held.map { entry -> entry.url })
+    }
+
+    /**
+     * Try each plain http feed, once while the reader runs, at its https
+     * address; one whose try got no definite answer (offline, a timeout, a
+     * failing server) is tried again on the next refresh, up to
+     * [UNSETTLED_TRIES] tries. One that serves the
+     * same feed moves there (see [moveToHttps]). One that does not, or whose
+     * https address is already followed, keeps the http problem.
+     */
+    private suspend fun upgradeHttpFeeds() {
+        val waiting = state.value.feeds.filter { feed -> isPlainHttp(feed.url) && httpTried.add(feed.id) }
+        val matches = mapConcurrently(waiting, PROBE_CONCURRENCY) { feed ->
+            val probe = probe(knownOf(feed))
+            val misses = httpMisses.merge(feed.id, if (probe.settled) 0 else 1, Int::plus) ?: 0
+            if (!probe.settled && misses < UNSETTLED_TRIES) {
+                httpTried.remove(feed.id)
+            }
+            probe.match?.let { match -> feed to match }
+        }.filterNotNull()
+        if (matches.isNotEmpty()) {
+            moveToHttps(matches)
+        }
+    }
+
+    /**
+     * Move plain http feeds to the https addresses found to serve them: same
+     * id, articles, marks and group, with the new address saved and sent like
+     * a person's change, so other devices move too, and the answer taken as
+     * its first check. A feed whose address changed meanwhile, or whose https
+     * address is already followed, stays.
+     */
+    private suspend fun moveToHttps(matches: List<Pair<Feed, HttpsMatch>>) {
+        val found = matches.associate { (feed, match) -> feed.id to Triple(feed.url, match, feedId(match.url)) }
+        val now = clock()
+        val moved = mutableListOf<Pair<Feed, HttpsMatch>>()
+        synchronized(feedEdits) {
+            update { current ->
+                moved.clear()
+                val ids = current.feeds.mapTo(HashSet()) { feed -> feed.id }
+                val idsByUrl = current.feeds.groupBy({ feed -> feed.url }, { feed -> feed.id })
+                val feeds = current.feeds.map { feed ->
+                    val candidate = found[feed.id]?.takeIf { (triedUrl, _, _) -> triedUrl == feed.url }
+                    if (candidate == null) {
+                        feed
+                    } else {
+                        val (_, match, newId) = candidate
+                        val taken = (newId != feed.id && newId in ids) ||
+                            idsByUrl[match.url].orEmpty().any { id -> id != feed.id }
+                        if (taken) {
+                            feed
+                        } else {
+                            val schedule = feed.schedule.copy(etag = "", lastModified = "", hash = "", nextFetch = 0)
+                            feed.copy(url = match.url, error = "", schedule = schedule, updatedAt = now).also { updated -> moved.add(updated to match) }
+                        }
+                    }
+                }
+                if (moved.isEmpty()) current else current.copy(feeds = feeds)
+            }
+            if (moved.isNotEmpty()) {
+                val feeds = moved.map { (feed, _) -> feed }
+                persist { store.putFeeds(feeds) }
+                sendToSync(LocalChange(feeds = feeds))
+            }
+        }
+        if (moved.isNotEmpty()) {
+            val checks = withContext(workDispatcher) {
+                moved.map { (feed, match) -> FinishedCheck(feed, checkOutcome(feed.schedule, feed.url, match.outcome, now), now) }
+            }
+            applyChecks(checks)
+        }
+    }
+
+    /** A feed among [feeds] with this id or one of these addresses. */
+    private fun followed(feeds: List<Feed>, id: String, urls: List<String>): Feed? =
+        feeds.firstOrNull { feed -> feed.id == id || feed.url in urls }
 
     /**
      * A feed's picture would not load: look once for the one its site
@@ -929,20 +1210,24 @@ class ReaderModel(
         }
     }
 
-    /** Store changes from the account; nothing here is sent back. */
+    /**
+     * Store changes from the account; nothing here is sent back. New articles
+     * and feeds wait for the lists to be settled.
+     */
     private suspend fun applyRemote(change: RemoteChange) {
         for ((id, removedAt) in change.removedFeeds) {
             dropFeed(id, removedAt)
         }
         val forgotten = mutableListOf<String>()
         if (change.feeds.isNotEmpty()) {
-            val byId = change.feeds.associateBy { feed -> feed.id }
+            val incoming = change.feeds.map(::markedHttp)
+            val byId = incoming.associateBy { feed -> feed.id }
             synchronized(feedEdits) {
                 update { current ->
                     val known = current.feeds.mapTo(HashSet()) { feed -> feed.id }
-                    current.copy(feeds = current.feeds.map { feed -> byId[feed.id] ?: feed } + change.feeds.filter { feed -> feed.id !in known })
+                    heldArrival(current, current.copy(feeds = current.feeds.map { feed -> byId[feed.id] ?: feed } + incoming.filter { feed -> feed.id !in known }))
                 }
-                persist { store.putFeeds(change.feeds) }
+                persist { store.putFeeds(incoming) }
             }
             forgotten.addAll(change.feeds.map { feed -> "$FEED_TOMBSTONE${feed.id}" })
         }
@@ -951,7 +1236,16 @@ class ReaderModel(
             val byId = incoming.associateBy { entry -> entry.id }
             update { current ->
                 val known = current.entries.mapTo(HashSet()) { entry -> entry.id }
-                current.copy(entries = current.entries.map { entry -> byId[entry.id] ?: entry } + incoming.filter { entry -> entry.id !in known })
+                val shown = viewOf(current).visible.mapTo(HashSet()) { entry -> entry.id }
+                // An article read elsewhere stays listed until the view changes, as one read here does.
+                val readElsewhere = incoming.filter { entry -> entry.read && entry.id in shown }.map { entry -> entry.id }
+                heldArrival(
+                    current,
+                    current.copy(
+                        entries = current.entries.map { entry -> byId[entry.id] ?: entry } + incoming.filter { entry -> entry.id !in known },
+                        pinned = if (readElsewhere.isEmpty()) current.pinned else current.pinned + readElsewhere,
+                    ),
+                )
             }
             persist { store.updateEntries(incoming) }
         }
@@ -992,6 +1286,8 @@ class ReaderModel(
                 aheadBodies = emptyMap(),
                 aheadPictures = emptyList(),
                 frozenRank = emptyMap(),
+                heldEntries = null,
+                heldFeeds = null,
             )
         }
         persist { store.clear() }
@@ -1042,10 +1338,11 @@ class ReaderModel(
                     }
                     savedFeeds = changed
                     savedEntries = added
-                    current.copy(
+                    val next = current.copy(
                         feeds = current.feeds.map { feed -> byId[feed.id] ?: feed },
                         entries = if (added.isEmpty()) current.entries else current.entries + added,
                     )
+                    if (added.isEmpty()) next else heldArrival(current, next)
                 }
                 val bodies = pulled.flatMap { found -> found.bodies.entries }.associate { (id, html) -> id to html }
                 if (savedFeeds.isNotEmpty() || savedEntries.isNotEmpty()) {

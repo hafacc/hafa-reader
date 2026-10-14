@@ -59,6 +59,14 @@ export class Sync {
   retention = $state<Retention>("forever");
   /** Whether the signed-in account's feeds have arrived from the server since signing in. */
   feedsKnown = $state(false);
+  /** Whether what the signed-in account had when sync began is stored here, all but entries older than the recent window. */
+  caughtUp = $state(false);
+  /**
+   * Whether the person waits for the account's data, which holds the loading
+   * screen until it has arrived: from opening and from signing in or
+   * replacing this device's data, until the reader lets them in.
+   */
+  awaited = $state(true);
 
   private readonly host: SyncHost;
   private readonly settings: FirebaseSettings;
@@ -121,6 +129,7 @@ export class Sync {
     try {
       const engine = await this.load();
       this.popupBlocked = (await engine.signIn()) === "blocked";
+      this.awaited = !this.popupBlocked;
     } catch (error) {
       console.error("Reader sign-in failed:", error);
       this.signInFailed = true;
@@ -134,6 +143,7 @@ export class Sync {
   /** With a different account waiting, replace this device's data with that account's. */
   async replaceLocal(): Promise<void> {
     const engine = await this.engine;
+    this.awaited = true;
     await engine?.replaceLocal();
   }
 
@@ -269,6 +279,7 @@ export class Sync {
     this.loadingOlder = update.loadingOlder;
     this.retention = update.retention;
     this.feedsKnown = update.feedsKnown;
+    this.caughtUp = update.caughtUp;
     if (update.email !== "") {
       rememberSignedIn(true);
     } else if (update.status === "off" && !this.signingIn) {

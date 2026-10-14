@@ -21,14 +21,18 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.input.pointer.PointerEventPass
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalResources
 import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.platform.UriHandler
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import cc.hafa.reader.R
+import cc.hafa.reader.core.GatePhase
 import cc.hafa.reader.core.viewKey
 import kotlinx.coroutines.launch
+import java.text.NumberFormat
 
 /**
  * The phone layout: the article list, with the feed list in a drawer opened
@@ -39,6 +43,7 @@ import kotlinx.coroutines.launch
 @Composable
 fun ReaderScreen(viewModel: ReaderViewModel) {
     val snapshot by viewModel.snapshot.collectAsStateWithLifecycle()
+    val gate by viewModel.gate.collectAsStateWithLifecycle()
     val colors = ReaderTheme.colors
     val drawerState = rememberDrawerState(DrawerValue.Closed)
     val scope = rememberCoroutineScope()
@@ -54,6 +59,7 @@ fun ReaderScreen(viewModel: ReaderViewModel) {
         viewModel.notices.collect { notice ->
             val message = when (notice) {
                 is Notice.Text -> resources.getString(notice.text)
+                is Notice.Count -> resources.getQuantityString(notice.text, notice.count, NumberFormat.getInstance().format(notice.count))
                 is Notice.Problem -> problemText(resources, notice.problem)
             }
             snackbarHostState.showSnackbar(message, withDismissAction = true)
@@ -65,14 +71,7 @@ fun ReaderScreen(viewModel: ReaderViewModel) {
                 .fillMaxSize()
                 .background(colors.page),
         ) {
-            if (current == null || !current.state.loaded) {
-                Logo(
-                    Modifier
-                        .size(48.dp)
-                        .align(Alignment.Center),
-                    loading = true,
-                )
-            } else {
+            if (current != null && current.state.loaded) {
                 val state = current.state
                 val listKey = "${viewKey(state.selection)}|${state.unreadOnly}|${current.view.viewSettings.sort}"
                 LaunchedEffect(listKey) { listState.scrollToItem(0) }
@@ -95,6 +94,33 @@ fun ReaderScreen(viewModel: ReaderViewModel) {
                     ScreenContent(current, viewModel, listState) { scope.launch { drawerState.open() } }
                 }
             }
+            if (gate.blocks) {
+                LoadingCover(showLogo = gate.phase == GatePhase.Shown)
+                // Back still leaves the app from the list, but does not move between screens behind the cover.
+                BackHandler(enabled = drawerState.isOpen || viewModel.screen == Screen.Detail) {}
+            }
+        }
+    }
+}
+
+/** The loading screen: an opaque cover that takes every touch, so nothing half loaded shows or can be tapped, with the turning logo once [showLogo]. */
+@Composable
+private fun LoadingCover(showLogo: Boolean) {
+    Box(
+        Modifier
+            .fillMaxSize()
+            .background(ReaderTheme.colors.page)
+            .pointerInput(Unit) {
+                awaitPointerEventScope {
+                    while (true) {
+                        awaitPointerEvent(PointerEventPass.Initial).changes.forEach { change -> change.consume() }
+                    }
+                }
+            },
+        contentAlignment = Alignment.Center,
+    ) {
+        if (showLogo) {
+            Logo(Modifier.size(48.dp), loading = true)
         }
     }
 }

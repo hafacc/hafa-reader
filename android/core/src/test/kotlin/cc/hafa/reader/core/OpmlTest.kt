@@ -11,14 +11,14 @@ class OpmlTest {
     fun `lists feeds with their folders`() {
         val source = """<?xml version="1.0"?><opml version="2.0"><head><title>x</title></head><body>
             <outline text="News" title="News">
-              <outline type="rss" text="One" xmlUrl="https://one.example/feed"/>
+              <outline type="rss" text="One" xmlUrl="https://one.example/feed" htmlUrl="https://one.example/"/>
             </outline>
             <outline type="rss" title="Two" text="Ignored" xmlUrl="two.example/rss"/>
             <outline type="rss" xmlUrl="https://three.example/feed"/>
             </body></opml>"""
         assertEquals(
             listOf(
-                OpmlFeed("https://one.example/feed", "One", "News"),
+                OpmlFeed("https://one.example/feed", "One", "News", "https://one.example/"),
                 OpmlFeed("two.example/rss", "Two", ""),
                 OpmlFeed("https://three.example/feed", "", ""),
             ),
@@ -47,7 +47,7 @@ class OpmlTest {
 class BuildOpmlTest {
     private val feeds = listOf(
         OpmlFeed("https://a.example/feed?x=1&y=2", "A & \"B\" <c>", ""),
-        OpmlFeed("https://b.example/feed", "B", "Tech"),
+        OpmlFeed("https://b.example/feed", "B", "Tech", "https://b.example/?a=1&b=2"),
         OpmlFeed("https://c.example/feed", "C", "News"),
     )
 
@@ -56,6 +56,8 @@ class BuildOpmlTest {
         val text = buildOpml(feeds)
         assertContains(text, """text="A &amp; &quot;B&quot; &lt;c&gt;"""")
         assertContains(text, """xmlUrl="https://a.example/feed?x=1&amp;y=2"""")
+        assertContains(text, """htmlUrl="https://b.example/?a=1&amp;b=2"""")
+        assertFalse("htmlUrl=\"\"" in text)
         assertTrue(text.indexOf("News") < text.indexOf("Tech"))
         assertTrue(text.indexOf("Tech") < text.indexOf("a.example"))
     }

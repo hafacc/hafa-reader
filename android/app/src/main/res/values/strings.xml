@@ -15,7 +15,13 @@
     <string name="no_results">Nothing found.</string>
     <string name="subscribers">%1$s subscribers</string>
     <string name="import_title">Import from another reader</string>
-    <string name="import_body">Choose the OPML file exported from your old reader. Folders are kept.</string>
+    <string name="import_body">Choose the OPML file exported from your old reader.</string>
+    <string name="import_group_label">Add to group</string>
+    <string name="import_keep_folders">Folders from the file</string>
+    <plurals name="import_skipped_http">
+        <item quantity="one">Skipped %1$s http feed with no https version.</item>
+        <item quantity="other">Skipped %1$s http feeds with no https version.</item>
+    </plurals>
     <string name="import_choose">Choose an OPML file</string>
     <string name="export_opml">Export as OPML</string>
     <string name="export_failed">Could not save the file.</string>
@@ -31,14 +37,18 @@
     <string name="sort_label">Sort</string>
     <string name="newest">Newest</string>
     <string name="oldest">Oldest</string>
+    <string name="reading_font_label">Reading font</string>
+    <!-- The reading font is one choice for the whole app, though it sits in each view's settings. -->
+    <string name="reading_font_hint">Applies to every view.</string>
+    <string name="font_literata" translatable="false">Literata</string>
+    <string name="font_public_sans" translatable="false">Public Sans</string>
     <string name="rules_label">Words</string>
     <string name="action_hide">Hide</string>
     <string name="action_only">Only show</string>
     <string name="add_phrase">Add a word or phrase, then press Enter</string>
-    <string name="remove_rule">Remove</string>
+    <string name="remove_rule">Remove %1$s</string>
     <string name="filter_hint">Words match whole words in the title or summary, ignoring capitals and spacing.</string>
     <string name="topics">Topics</string>
-    <string name="end_of_list">End of list</string>
     <string name="first_sign_in_line">Already use Reader?</string>
     <string name="first_sign_in">Sign in to sync your feeds</string>
     <string name="retention_label">Keep synced articles</string>
@@ -48,6 +58,8 @@
     <string name="retention_365">1 year</string>
     <string name="retention_forever">Forever</string>
     <string name="refresh">Refresh</string>
+    <!-- Said by the dot on the logo and the menu button when feeds are overdue for a check. -->
+    <string name="refresh_suggested">Some feeds are due for a check</string>
     <string name="topics_hint">Select a topic to turn it off. Articles with only turned-off topics are hidden.</string>
     <string name="name_label">Name</string>
     <string name="group_label">Group</string>
@@ -61,11 +73,14 @@
     <string name="star">Star</string>
     <string name="share">Share</string>
     <string name="feeds">Feeds</string>
+    <string name="show_feeds">Show feeds</string>
     <string name="back">Back</string>
     <!-- Reasons a feed cannot be read, from the web app and the extension. -->
     <string name="error_no_answer">The site did not answer.</string>
     <string name="error_not_https">Only https addresses can be added.</string>
     <string name="error_not_https_feed">The feed is not on https.</string>
+    <string name="error_http_refused">Reader can\'t add http addresses. Try https instead.</string>
+    <string name="error_http_feed">This feed\'s address is http, not https, so Reader can\'t fetch it.</string>
     <string name="error_not_a_feed">That address is not a feed and does not point to one.</string>
     <string name="error_status">The site answered %1$d.</string>
     <string name="error_refused">The site refused to let Reader read it.</string>

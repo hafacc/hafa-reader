@@ -1,11 +1,14 @@
 import { expect, test } from "bun:test";
 import {
+  articleTopics,
+  byCount,
   DEFAULT_SETTINGS,
   type FilterEntry,
   hasWord,
   keeper,
   passes,
   topicCounts,
+  topicRanks,
   type ViewSettings,
 } from "./filter.ts";
 
@@ -81,6 +84,42 @@ test("topics are counted, commonest first", () => {
     { topic: "Business", count: 2 },
     { topic: "U.S.", count: 1 },
   ]);
+});
+
+test("a topic an article lists twice counts once, and ties go by name", () => {
+  const twice = { ...story, categories: ["Zoo", "zoo ", "Apple"] };
+  expect(topicCounts([twice])).toEqual([
+    { topic: "Apple", count: 1 },
+    { topic: "Zoo", count: 1 },
+  ]);
+});
+
+test("names go most counted first, then by name", () => {
+  const counts = new Map<string, number>([
+    ["budget", 2],
+    ["senate", 5],
+    ["night", 2],
+  ]);
+  expect(
+    byCount(
+      ["budget", "night", "senate", "zoo"],
+      (name) => counts.get(name) ?? 0,
+    ),
+  ).toEqual(["senate", "budget", "night", "zoo"]);
+});
+
+test("an article's topics follow the view's counts, each once", () => {
+  const counts = [
+    { topic: "Politics", count: 3 },
+    { topic: "Business", count: 2 },
+    { topic: "U.S.", count: 2 },
+  ];
+  const ranks = topicRanks(counts);
+  expect(
+    articleTopics(["U.S.", "Zoo", "politics ", "Business", "US"], ranks),
+  ).toEqual(["politics ", "Business", "U.S.", "US", "Zoo"]);
+  expect(articleTopics(["U.S.", "u.s."], ranks)).toEqual(["U.S."]);
+  expect(ranks.get("u.s.")).toBe(2);
 });
 
 test("a list of words is compiled once and reused", () => {

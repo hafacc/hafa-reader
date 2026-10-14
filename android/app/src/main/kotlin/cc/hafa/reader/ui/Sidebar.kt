@@ -32,6 +32,8 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
@@ -89,6 +91,8 @@ fun Sidebar(snapshot: Snapshot, viewModel: ReaderViewModel, onPicked: () -> Unit
                 .fillMaxHeight()
                 .padding(bottom = 12.dp),
         ) {
+            val suggested = refreshSuggested(state)
+            val suggestion = if (suggested) stringResource(R.string.refresh_suggested) else ""
             Row(
                 Modifier
                     .padding(NavigationDrawerItemDefaults.ItemPadding)
@@ -99,11 +103,18 @@ fun Sidebar(snapshot: Snapshot, viewModel: ReaderViewModel, onPicked: () -> Unit
                         viewModel.goHome()
                         onPicked()
                     }
+                    .semantics {
+                        if (suggested) {
+                            stateDescription = suggestion
+                        }
+                    }
                     .padding(horizontal = 16.dp),
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(12.dp),
             ) {
-                Logo(Modifier.size(32.dp), loading = !state.loaded || state.refreshing || state.adding, labeled = false)
+                WithDueDot(suggested) {
+                    Logo(Modifier.size(32.dp), loading = !state.loaded || state.refreshing || state.adding, labeled = false)
+                }
                 Text(stringResource(R.string.app_name), fontWeight = FontWeight.SemiBold, fontSize = 18.sp, color = colors.text, maxLines = 1)
             }
             LazyColumn(Modifier.weight(1f)) {

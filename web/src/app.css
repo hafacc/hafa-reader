@@ -16,6 +16,8 @@
   --ok: #2f9a5c;
   /* Material's error color, as on Android */
   --danger: #b3261e;
+  /* article text and titles, unless Public Sans is chosen */
+  --reading-font: "Literata Variable", Georgia, serif;
 }
 
 @media (prefers-color-scheme: dark) {
@@ -52,7 +54,11 @@
   --animate-dot: dot-pulse 1.4s ease-in-out infinite;
   --color-faded: var(--read);
   --font-sans: "Public Sans Variable", ui-sans-serif, system-ui, sans-serif;
-  --font-serif: "Fraunces Variable", Georgia, serif;
+  --font-reading: var(--reading-font);
+}
+
+:root[data-reading-font="public-sans"] {
+  --reading-font: "Public Sans Variable", ui-sans-serif, system-ui, sans-serif;
 }
 
 html,

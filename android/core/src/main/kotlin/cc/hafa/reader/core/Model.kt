@@ -144,6 +144,16 @@ sealed interface FeedProblem {
         override val code = "not-https"
     }
 
+    /** What was typed is a plain http address, which is never added. */
+    data object HttpRefused : FeedProblem {
+        override val code = "http-refused"
+    }
+
+    /** A followed feed's address is plain http, and no https version of it was found. */
+    data object HttpFeed : FeedProblem {
+        override val code = "http-feed"
+    }
+
     /** An answer that is not a feed, while adding one. */
     data object NotAFeed : FeedProblem {
         override val code = "not-a-feed"
@@ -170,6 +180,8 @@ fun feedProblemFromCode(code: String): FeedProblem? =
         code == FeedProblem.NotAFeed.code -> FeedProblem.NotAFeed
         code == FeedProblem.NotWebAddress.code -> FeedProblem.NotWebAddress
         code == FeedProblem.NotHttps.code -> FeedProblem.NotHttps
+        code == FeedProblem.HttpRefused.code -> FeedProblem.HttpRefused
+        code == FeedProblem.HttpFeed.code -> FeedProblem.HttpFeed
         code == FeedProblem.Unreadable.code -> FeedProblem.Unreadable
         code.startsWith("status:") -> code.removePrefix("status:").toIntOrNull()?.let(FeedProblem::Status) ?: FeedProblem.NoAnswer
         else -> FeedProblem.NoAnswer

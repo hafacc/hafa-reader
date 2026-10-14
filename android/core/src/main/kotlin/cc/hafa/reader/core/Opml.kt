@@ -13,6 +13,8 @@ data class OpmlFeed(
     val title: String,
     /** The folder the feed sits in; empty for none. */
     val folder: String,
+    /** Address of the feed's site; empty when the file gives none. */
+    val siteUrl: String = "",
 )
 
 /** An attribute's value whatever the case of its name, as exporters vary; null when absent. */
@@ -27,7 +29,7 @@ private fun collect(parent: Element, folder: String, feeds: MutableList<OpmlFeed
             if (url.isEmpty()) {
                 collect(child, title, feeds)
             } else {
-                feeds.add(OpmlFeed(url, title, folder))
+                feeds.add(OpmlFeed(url, title, folder, attribute(child, "htmlUrl")?.trim() ?: ""))
                 // the lenient parse nests outlines that follow an unclosed one inside it
                 collect(child, folder, feeds)
             }
@@ -55,7 +57,8 @@ private fun escapeAttribute(text: String): String =
 
 private fun outlineOf(feed: OpmlFeed, indent: String): String {
     val title = escapeAttribute(feed.title)
-    return "$indent<outline type=\"rss\" text=\"$title\" title=\"$title\" xmlUrl=\"${escapeAttribute(feed.url)}\"/>"
+    val site = if (feed.siteUrl.isEmpty()) "" else " htmlUrl=\"${escapeAttribute(feed.siteUrl)}\""
+    return "$indent<outline type=\"rss\" text=\"$title\" title=\"$title\" xmlUrl=\"${escapeAttribute(feed.url)}\"$site/>"
 }
 
 /** Write feeds as OPML text, listing each group's feeds inside a folder outline and loose feeds after. */
@@ -79,4 +82,4 @@ fun buildOpml(feeds: List<OpmlFeed>): String {
 }
 
 /** The feeds to export, with their names and groups. */
-fun opmlFeedsOf(feeds: List<Feed>): List<OpmlFeed> = feeds.map { feed -> OpmlFeed(feed.url, feed.title, feed.folder) }
+fun opmlFeedsOf(feeds: List<Feed>): List<OpmlFeed> = feeds.map { feed -> OpmlFeed(feed.url, feed.title, feed.folder, feed.siteUrl) }

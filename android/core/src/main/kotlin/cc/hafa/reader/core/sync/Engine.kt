@@ -221,6 +221,7 @@ class SyncEngine(
                     session?.retention,
                     if (known.uid == null) "" else known.photoUrl,
                     session?.feedsKnown ?: false,
+                    session?.caughtUp ?: false,
                 ),
             )
         }
@@ -309,25 +310,27 @@ class SyncEngine(
      * everything on this device.
      */
     fun deleteAccount() {
-        val account = uid ?: return
-        mutableUi.update { current -> current.copy(deleting = true, deleteFailed = false) }
-        scope.launch {
-            try {
-                // before anything stops, so a closed chooser leaves sync as it was
-                auth.ensureRecentSignIn()
-                emptyAccount(account)
-                if (preferences.get(ACCOUNT_KEY) == account) {
-                    preferences.set(ACCOUNT_KEY, null)
+        val account = uid
+        if (account != null) {
+            mutableUi.update { current -> current.copy(deleting = true, deleteFailed = false) }
+            scope.launch {
+                try {
+                    // before anything stops, so a closed chooser leaves sync as it was
+                    auth.ensureRecentSignIn()
+                    emptyAccount(account)
+                    if (preferences.get(ACCOUNT_KEY) == account) {
+                        preferences.set(ACCOUNT_KEY, null)
+                    }
+                    auth.signOut()
+                } catch (cancelled: CancellationException) {
+                    throw cancelled
+                } catch (failure: Exception) {
+                    logger.log(Level.WARNING, "could not delete the account", failure)
+                    mutableUi.update { current -> current.copy(deleteFailed = true) }
+                } finally {
+                    mutableUi.update { current -> current.copy(deleting = false) }
+                    report()
                 }
-                auth.signOut()
-            } catch (cancelled: CancellationException) {
-                throw cancelled
-            } catch (failure: Exception) {
-                logger.log(Level.WARNING, "could not delete the account", failure)
-                mutableUi.update { current -> current.copy(deleteFailed = true) }
-            } finally {
-                mutableUi.update { current -> current.copy(deleting = false) }
-                report()
             }
         }
     }

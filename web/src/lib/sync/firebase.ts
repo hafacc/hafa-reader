@@ -304,6 +304,12 @@ class Session {
   private readonly subscriptionsReady = Promise.withResolvers<void>();
   /** Whether entries older than the recent window are still loading. */
   loadingOlder = false;
+  /** Whether the account's settings from the server are stored here. */
+  private settingsIn: boolean;
+  /** Whether the entry listener's first snapshot is stored here. */
+  private entriesIn: boolean;
+  /** Whether the first pass has stored the recent window of entries. */
+  private recentIn: boolean;
 
   constructor(
     db: Firestore,
@@ -323,6 +329,9 @@ class Session {
     this.merging = false;
     this.restamping = false;
     this.flushRetrying = false;
+    this.settingsIn = false;
+    this.entriesIn = false;
+    this.recentIn = false;
   }
 
   /** Whether something failed: a write, a read, or a listener that has not come back yet. */
@@ -333,6 +342,20 @@ class Session {
   /** Whether the account's feeds have come from the server in this session. */
   get feedsKnown(): boolean {
     return this.subscriptionsReconciled;
+  }
+
+  /**
+   * Whether what the account had when this session began is stored here: its
+   * feeds and settings from the server, the entry listener's first snapshot,
+   * and the recent window of entries; older ones may still be loading.
+   */
+  get caughtUp(): boolean {
+    return (
+      this.subscriptionsReconciled &&
+      this.settingsIn &&
+      this.entriesIn &&
+      (this.recentIn || this.state.merged)
+    );
   }
 
   /** How long the account keeps entries, as known here. */
@@ -806,6 +829,10 @@ class Session {
       settings: new Map(merged.push),
       removedSettings: new Map(merged.pushRemoved),
     });
+    if (this.settingsReconciled && !this.settingsIn) {
+      this.settingsIn = true;
+      this.onStatus();
+    }
   }
 
   /**
@@ -874,6 +901,10 @@ class Session {
         this.serially(async () => {
           try {
             await this.onEntries(snapshot);
+            if (!this.entriesIn) {
+              this.entriesIn = true;
+              this.onStatus();
+            }
           } catch (error) {
             if (!this.cursorHeld) {
               this.cursorHeld = true;
@@ -955,6 +986,7 @@ class Session {
         // biome-ignore lint/performance/noAwaitInLoops: pages are read one after another, each after the last
         upper = (await this.retrying(() => this.mergePage(seen, from))) ?? from;
         if (!this.state.merged && upper < cutoff) {
+          this.recentIn = true;
           this.loadingOlder = true;
           this.onStatus();
           await sleep(OLDER_PAUSE_MS);
@@ -1574,6 +1606,7 @@ export function startFirebase(
       loadingOlder: session?.loadingOlder ?? false,
       retention: session?.retention ?? "forever",
       feedsKnown: session?.feedsKnown ?? false,
+      caughtUp: session?.caughtUp ?? false,
     });
   }
 

@@ -18,7 +18,7 @@ class MainActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
         setContent {
-            ReaderTheme {
+            ReaderTheme(viewModel.readingFont) {
                 ReaderScreen(viewModel)
             }
         }

@@ -15,6 +15,7 @@
   } from "#lib/reader.svelte.ts";
   import type { Feed, Selection } from "#lib/types.ts";
   import AccountAvatar from "./account-avatar.svelte";
+  import DueDot from "./due-dot.svelte";
   import FeedIcon from "./feed-icon.svelte";
   import Logo from "./logo.svelte";
   import SyncStatus from "./sync-status.svelte";
@@ -170,15 +171,24 @@
       type="button"
       class="flex min-w-0 flex-1 items-center gap-2.5 rounded-lg text-left"
       onclick={goHome}
+      title={reader.refreshSuggested ? copy.refreshSuggested : undefined}
     >
-      <Logo
-        class="size-8 shrink-0"
-        loading={!reader.loaded || reader.refreshing || reader.adding}
-      />
+      <span class="relative shrink-0">
+        <Logo
+          class="block size-8"
+          loading={!reader.loaded || reader.refreshing || reader.adding}
+        />
+        {#if reader.refreshSuggested}
+          <DueDot />
+        {/if}
+      </span>
       <span
         class="min-w-0 flex-1 truncate whitespace-nowrap font-semibold tracking-tight {fade}"
         >{copy.appName}</span
       >
+      {#if reader.refreshSuggested}
+        <span class="sr-only">{copy.refreshSuggested}</span>
+      {/if}
     </button>
     {#if !drawer && toggleable}
       <button

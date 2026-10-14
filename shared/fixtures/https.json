@@ -1,0 +1,111 @@
+{
+  "plainHttp": [
+    { "input": "http://example.com/rss", "output": true },
+    { "input": " HTTP://Example.com/rss ", "output": true },
+    { "input": "https://example.com/rss", "output": false },
+    { "input": "ftp://example.com/rss", "output": false },
+    { "input": "example.com/rss", "output": false },
+    { "input": "", "output": false }
+  ],
+  "plainAddress": [
+    { "input": "https://example.com/rss", "output": "http://example.com/rss" },
+    { "input": " HTTPS://Example.com:8443/rss?a=1 ", "output": "http://example.com:8443/rss?a=1" },
+    { "input": "http://example.com/rss", "output": "" },
+    { "input": "ftp://example.com/rss", "output": "" },
+    { "input": "", "output": "" }
+  ],
+  "webAddress": [
+    { "name": "plain http kept", "input": " HTTP://Example.com/rss ", "output": "http://example.com/rss" },
+    { "name": "https with a path added", "input": "https://example.com", "output": "https://example.com/" },
+    { "name": "http's own port left out", "input": "http://example.com:80/rss", "output": "http://example.com/rss" },
+    { "name": "https's port kept on http", "input": "http://example.com:443/rss", "output": "http://example.com:443/rss" },
+    { "name": "https's own port left out", "input": "https://example.com:443/rss", "output": "https://example.com/rss" },
+    { "name": "http's port kept on https", "input": "https://example.com:80/rss", "output": "https://example.com:80/rss" },
+    { "name": "scheme and host in lower case, path kept", "input": "HTTPS://EXAMPLE.COM/Feed", "output": "https://example.com/Feed" },
+    { "name": "trailing dot kept", "input": "http://example.com./rss", "output": "http://example.com./rss" },
+    { "name": "fragment kept", "input": "http://example.com/rss#top", "output": "http://example.com/rss#top" },
+    { "name": "international name", "input": "http://bücher.example/rss", "output": "http://xn--bcher-kva.example/rss" },
+    { "name": "space escaped", "input": "http://example.com/a b", "output": "http://example.com/a%20b" },
+    { "name": "user and password refused", "input": "http://user:secret@example.com/rss", "output": "" },
+    { "name": "user refused", "input": "https://user@example.com/rss", "output": "" },
+    { "name": "another scheme", "input": "ftp://example.com/rss", "output": "" },
+    { "name": "empty", "input": "", "output": "" }
+  ],
+  "probeAllowed": [
+    { "input": "http://blog.example.com/rss", "output": true },
+    { "input": "http://bücher.example/rss", "output": true },
+    { "input": "http://localhost/rss", "output": false },
+    { "input": "http://LOCALHOST./rss", "output": false },
+    { "input": "http://app.localhost/rss", "output": false },
+    { "input": "http://printer.local/rss", "output": false },
+    { "input": "http://wiki.corp.internal/rss", "output": false },
+    { "input": "http://nas.home.arpa/rss", "output": false },
+    { "input": "http://router.lan/rss", "output": false },
+    { "input": "http://intranet/rss", "output": false },
+    { "input": "http://127.0.0.1/rss", "output": false },
+    { "input": "http://192.168.1.1:8080/rss", "output": false },
+    { "input": "http://10.0.0.5/rss", "output": false },
+    { "input": "http://169.254.169.254/latest", "output": false },
+    { "input": "http://8.8.8.8/rss", "output": false },
+    { "input": "http://2130706433/rss", "output": false },
+    { "input": "http://0x7f.1/rss", "output": false },
+    { "input": "http://[::1]/rss", "output": false },
+    { "input": "http://[fe80::1]/rss", "output": false },
+    { "input": "http://user:secret@blog.example.com/rss", "output": false },
+    { "input": "not an address", "output": false }
+  ],
+  "settledAnswer": [
+    { "name": "a feed", "status": 200, "insecure": false, "settled": true },
+    { "name": "not found", "status": 404, "insecure": false, "settled": true },
+    { "name": "refused", "status": 403, "insecure": false, "settled": true },
+    { "name": "a redirect off https", "status": 0, "insecure": true, "settled": true },
+    { "name": "no answer, offline or timed out", "status": 0, "insecure": false, "settled": false },
+    { "name": "request timeout", "status": 408, "insecure": false, "settled": false },
+    { "name": "too many requests", "status": 429, "insecure": false, "settled": false },
+    { "name": "server error", "status": 503, "insecure": false, "settled": false }
+  ],
+  "sameFeed": [
+    {
+      "name": "same title, ignoring capitals and spacing",
+      "known": { "url": "http://feeds.example/a", "title": "The  Daily Post", "siteUrl": "", "guids": [], "links": [] },
+      "found": { "title": "the daily post", "siteUrl": "https://elsewhere.example/", "guids": [], "links": [] },
+      "same": true
+    },
+    {
+      "name": "an article in common by guid",
+      "known": { "url": "http://feeds.example/a", "title": "Old name", "siteUrl": "", "guids": ["tag:post-1", "tag:post-2"], "links": [] },
+      "found": { "title": "New name", "siteUrl": "", "guids": ["tag:post-2", "tag:post-3"], "links": [] },
+      "same": true
+    },
+    {
+      "name": "an article in common by link, ignoring the scheme",
+      "known": { "url": "http://feeds.example/a", "title": "Old name", "siteUrl": "", "guids": [], "links": ["http://blog.example/post-1"] },
+      "found": { "title": "New name", "siteUrl": "", "guids": ["x"], "links": ["https://blog.example/post-1"] },
+      "same": true
+    },
+    {
+      "name": "site on the feed's own host, ignoring www",
+      "known": { "url": "http://www.blog.example/rss", "title": "My renamed feed", "siteUrl": "", "guids": [], "links": [] },
+      "found": { "title": "Blog", "siteUrl": "https://blog.example/", "guids": [], "links": [] },
+      "same": true
+    },
+    {
+      "name": "site on the known site's host",
+      "known": { "url": "http://feeds.host.example/blog", "title": "Renamed", "siteUrl": "http://blog.example/", "guids": [], "links": [] },
+      "found": { "title": "Blog", "siteUrl": "https://www.blog.example/home", "guids": [], "links": [] },
+      "same": true
+    },
+    {
+      "name": "a different feed",
+      "known": { "url": "http://blog.example/rss", "title": "Blog", "siteUrl": "", "guids": ["a"], "links": ["https://blog.example/a"] },
+      "found": { "title": "Welcome to nginx", "siteUrl": "https://hosting.example/", "guids": ["b"], "links": ["https://hosting.example/b"] },
+      "same": false
+    },
+    {
+      "name": "nothing to compare",
+      "known": { "url": "http://feeds.host.example/blog", "title": "", "siteUrl": "", "guids": [], "links": [] },
+      "found": { "title": "", "siteUrl": "", "guids": ["a"], "links": [""] },
+      "same": false
+    }
+  ]
+}

@@ -8,6 +8,8 @@ export interface TrackedFeed {
   url: string;
   /** The web app holds no articles for this feed, so it needs them all again. */
   empty: boolean;
+  /** An answer from the address the web app already took in, to count as the first check of a schedule that starts over; absent when none. */
+  first?: FetchOutcome;
 }
 
 /** What the extension pulled from one feed since the web app last asked. */
@@ -29,6 +31,8 @@ export interface FeedStatus {
   lastChecked: number;
   /** Why the last check failed; empty when it did not. */
   error: string;
+  /** Milliseconds since the epoch of the next scheduled check; absent from older extensions. */
+  nextCheck?: number;
 }
 
 /** A message the web app sends to the extension. */
@@ -42,6 +46,7 @@ export type ExtensionRequest =
     }
   | { type: "track"; feeds: TrackedFeed[] }
   | { type: "refresh"; feedIds: string[] }
+  | { type: "checkDue" }
   | { type: "drain" }
   | { type: "ack"; upTo: number };
 
@@ -59,7 +64,13 @@ export interface FetchOutcome {
   lastModified: string;
   /** Milliseconds the site asked us to wait before checking again. */
   hint: number;
-  /** Refused because the address, or where it redirected, is not https; status is then zero. */
+  /**
+   * Refused because the address, or where it redirected, is not https; status
+   * is then zero. The extension also sets it when the address redirects but
+   * following the redirects never reaches an answer, since its content policy
+   * turns each hop to http into https, and a site that sends https back to
+   * http then loops.
+   */
   insecure: boolean;
 }
 
@@ -69,6 +80,7 @@ export type ExtensionResponse =
   | ({ type: "fetched" } & FetchOutcome)
   | { type: "tracked" }
   | { type: "refreshed" }
+  | { type: "queued" }
   | {
       type: "drained";
       /** Acknowledge up to this to remove what was drained; zero when nothing was. */
@@ -77,6 +89,8 @@ export type ExtensionResponse =
       status: FeedStatus[];
       /** More is waiting than fit in this reply; drain again after acknowledging. */
       more: boolean;
+      /** Feeds are being checked or saved; absent from older extensions. */
+      checking?: boolean;
     }
   | { type: "acked" }
   | { type: "error"; message: string };

@@ -15,25 +15,26 @@ class FeedSearchTest {
     """.trimIndent()
 
     @Test
-    fun `hits are read with the feed prefix dropped, gaps filled and http moved to https`() {
+    fun `hits are read with the feed prefix dropped, gaps filled and http kept for a later try`() {
         assertEquals(
             listOf(
-                FeedHit("https://cooking.example/feed", "Cooking", "Recipes daily", "https://cooking.example/icon.png", 12345),
-                FeedHit("https://plain.example/rss", "feed/http://plain.example/rss", "", "", 0),
+                FeedHit("https://cooking.example/feed", "Cooking", "Recipes daily", "https://cooking.example/icon.png", 12345, "https://cooking.example/"),
+                FeedHit("http://plain.example/rss", "feed/http://plain.example/rss", "", "", 0),
             ),
             parseFeedSearch(answer),
         )
     }
 
     @Test
-    fun `only feed ids count, http is upgraded and repeats are dropped`() {
+    fun `only feed ids with web addresses count, and repeats are dropped`() {
         val answer = """{"results":[
           {"feedId":"feed/http://a.example/rss","title":"A"},
           {"feedId":"feed/https://a.example/rss","title":"A again"},
+          {"feedId":"feed/https://a.example/rss","title":"A once more"},
           {"feedId":"topic/cooking","title":"Not a feed"},
           {"feedId":"feed/ftp://b.example/rss","title":"Not web"}
         ]}"""
-        assertEquals(listOf("https://a.example/rss" to "A"), parseFeedSearch(answer).map { hit -> hit.url to hit.title })
+        assertEquals(listOf("http://a.example/rss" to "A", "https://a.example/rss" to "A again"), parseFeedSearch(answer).map { hit -> hit.url to hit.title })
     }
 
     @Test

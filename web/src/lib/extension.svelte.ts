@@ -21,7 +21,11 @@ export class ExtensionClient {
   private readonly id = extensionId;
   private misses = 0;
 
-  /** Send a request; resolves to undefined when the extension is absent. */
+  /**
+   * Send a request; resolves to undefined when the extension is absent or the
+   * message could not be sent (too big, or the extension went away), which is
+   * logged except for pings, which fail whenever it is not installed.
+   */
   async send(
     request: ExtensionRequest,
   ): Promise<ExtensionResponse | undefined> {
@@ -31,7 +35,10 @@ export class ExtensionClient {
       try {
         const reply: unknown = await runtime.sendMessage(this.id, request);
         response = isResponse(reply) ? reply : undefined;
-      } catch {
+      } catch (error) {
+        if (request.type !== "ping") {
+          console.error(`Reader: could not send ${request.type}:`, error);
+        }
         response = undefined;
       }
     }

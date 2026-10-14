@@ -6,6 +6,7 @@ import cc.hafa.reader.core.Feed
 import cc.hafa.reader.core.Sort
 import cc.hafa.reader.core.ViewSettings
 import cc.hafa.reader.core.upgradedAddress
+import cc.hafa.reader.core.webAddress
 
 private const val DAY_MS = 24L * 60 * 60 * 1000
 
@@ -409,8 +410,8 @@ private fun hasTime(fields: Map<String, Any?>): Boolean = fields["updatedAt"] is
 fun parseSubscription(fields: Map<String, Any?>): SubscriptionDocument? {
     val stored = if (hasTime(fields)) {
         SubscriptionDocument(
-            // https only: plain http is upgraded, other addresses are dropped
-            url = upgradedAddress(text(fields, "url")),
+            // a plain http feed is kept as http, to be tried over https before any fetch; other addresses are dropped
+            url = webAddress(text(fields, "url")),
             title = text(fields, "title"),
             folder = text(fields, "folder"),
             renamed = flag(fields, "renamed"),

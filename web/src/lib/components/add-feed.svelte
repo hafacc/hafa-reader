@@ -7,6 +7,7 @@
   import { buildOpml } from "#lib/opml.ts";
   import { type FeedHit, faviconFor, type Reader } from "#lib/reader.svelte.ts";
   import FeedIcon from "./feed-icon.svelte";
+  import TextField from "./text-field.svelte";
 
   const {
     reader,
@@ -25,6 +26,15 @@
   let dragging = $state(false);
   // a topic search, as opposed to adding an address or a file
   let searching = $state(false);
+  // the group imported feeds go into; empty keeps the file's folders
+  let importGroup = $state("");
+
+  function editImportGroup(event: Event): void {
+    const { currentTarget } = event;
+    if (currentTarget instanceof HTMLInputElement) {
+      importGroup = currentTarget.value;
+    }
+  }
 
   function clearField(): void {
     fieldError = "";
@@ -105,12 +115,18 @@
 
   async function importText(source: string): Promise<void> {
     try {
-      const result = await reader.importOpml(source);
+      const result = await reader.importOpml(
+        source,
+        importGroup.trim() || undefined,
+      );
       if (result.found === 0) {
         reader.notify(copy.importNone);
+      } else if (result.skipped > 0) {
+        reader.notify(copy.importSkippedHttp(result.skipped));
       } else if (result.added === 0) {
         reader.notify(copy.importNothingNew);
-      } else {
+      }
+      if (result.added > 0) {
         ondone();
       }
     } catch {
@@ -137,6 +153,7 @@
         url: feed.url,
         title: feed.title,
         folder: feed.folder,
+        siteUrl: feed.siteUrl,
       })),
     );
     try {
@@ -179,7 +196,7 @@
 <div class="flex w-full max-w-md flex-col gap-6 {first ? "p-6" : ""}">
   {#if first}
     <div class="flex flex-col gap-2">
-      <h2 class="font-serif text-2xl font-bold">{copy.emptyTitle}</h2>
+      <h2 class="font-reading text-2xl font-bold">{copy.emptyTitle}</h2>
       <p class="text-sm text-muted">{copy.emptyBody}</p>
     </div>
   {/if}
@@ -267,8 +284,16 @@
   {/if}
 
   <div class="flex flex-col gap-3 border-t border-line pt-6">
-    <h3 class="font-serif text-lg font-bold">{copy.importTitle}</h3>
+    <h3 class="font-reading text-lg font-bold">{copy.importTitle}</h3>
     <p class="text-sm text-muted">{copy.importBody}</p>
+    <TextField
+      id="import-group"
+      label={copy.importGroupLabel}
+      placeholder={copy.importKeepFolders}
+      suggestions={reader.folders}
+      value={importGroup}
+      oninput={editImportGroup}
+    />
     <!-- biome-ignore lint/a11y/noStaticElementInteractions: a drop target; the file picker inside is the keyboard route -->
     <div
       role="presentation"

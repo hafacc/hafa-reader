@@ -6,7 +6,6 @@ import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.infiniteRepeatable
 import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.tween
-import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -20,7 +19,6 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.items
@@ -57,8 +55,8 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalLayoutDirection
-import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
@@ -68,6 +66,7 @@ import cc.hafa.reader.R
 import cc.hafa.reader.core.Entry
 import cc.hafa.reader.core.Selection
 import cc.hafa.reader.core.ViewTitle
+import cc.hafa.reader.core.articleTopics
 import coil3.compose.AsyncImage
 import kotlinx.coroutines.launch
 import java.time.Instant
@@ -97,8 +96,9 @@ fun EntryList(snapshot: Snapshot, viewModel: ReaderViewModel, listState: LazyLis
     ReaderScaffold(
         bottomBar = { scrollBehavior ->
             ReaderBottomBar(scrollBehavior) {
-                IconAction(Icons.Filled.Menu, stringResource(R.string.feeds), onMenu, tint = colors.text)
-                BarTitle(viewTitleText(view.viewTitle))
+                val suggested = refreshSuggested(state)
+                IconAction(Icons.Filled.Menu, stringResource(R.string.feeds), onMenu, tint = colors.text, dotted = suggested)
+                BarTitle(viewTitleText(view.viewTitle), onClick = onMenu, clickLabel = stringResource(R.string.show_feeds))
                 IconAction(
                     if (state.unreadOnly) Icons.Outlined.VisibilityOff else Icons.Outlined.Visibility,
                     stringResource(R.string.unread_only),
@@ -125,7 +125,7 @@ fun EntryList(snapshot: Snapshot, viewModel: ReaderViewModel, listState: LazyLis
                 contentPadding = PaddingValues(
                     start = padding.calculateStartPadding(layoutDirection),
                     end = padding.calculateEndPadding(layoutDirection),
-                    bottom = padding.calculateBottomPadding(),
+                    bottom = scrollEndPadding(),
                 ),
             ) {
                 val problem = shownFeed?.error ?: ""
@@ -136,6 +136,7 @@ fun EntryList(snapshot: Snapshot, viewModel: ReaderViewModel, listState: LazyLis
                     EntryCard(
                         entry = entry,
                         source = feedTitles[entry.feedId] ?: "",
+                        topics = remember(entry.categories, view.topicOrder) { articleTopics(entry.categories, view.topicOrder) },
                         active = entry.id == state.currentId,
                         onOpen = { viewModel.openEntry(entry.id) },
                         onToggleRead = { model.toggleReadFor(entry.id) },
@@ -153,9 +154,8 @@ fun EntryList(snapshot: Snapshot, viewModel: ReaderViewModel, listState: LazyLis
                                 .fillParentMaxSize()
                                 .padding(32.dp),
                             horizontalAlignment = Alignment.CenterHorizontally,
-                            verticalArrangement = Arrangement.spacedBy(12.dp, Alignment.CenterVertically),
+                            verticalArrangement = Arrangement.Center,
                         ) {
-                            Image(painterResource(R.drawable.sleeping_dot), contentDescription = null, modifier = Modifier.width(160.dp))
                             Text(stringResource(R.string.no_entries), fontSize = 14.sp, lineHeight = 20.sp, color = colors.muted)
                         }
                     }
@@ -169,9 +169,10 @@ fun EntryList(snapshot: Snapshot, viewModel: ReaderViewModel, listState: LazyLis
 private const val FULL_TURN = 360f
 private const val TURN_MS = 1000
 
-/** The end of the list: a note and a button that checks the view's feeds as pulling down does; its icon turns while they are checked. */
+/** The end of the list: a full-width row that checks the view's feeds as pulling down does; its icon turns while they are checked. */
 @Composable
 private fun ListEnd(refreshing: Boolean, onRefresh: () -> Unit) {
+    val colors = ReaderTheme.colors
     val turning = refreshing && animationsOn()
     val angle = if (turning) {
         rememberInfiniteTransition(label = "refresh").animateFloat(
@@ -183,22 +184,21 @@ private fun ListEnd(refreshing: Boolean, onRefresh: () -> Unit) {
     } else {
         0f
     }
-    Column(
-        Modifier
-            .fillMaxWidth()
-            .padding(horizontal = 16.dp, vertical = 24.dp),
-        horizontalAlignment = Alignment.CenterHorizontally,
-        verticalArrangement = Arrangement.spacedBy(12.dp),
-    ) {
-        Text(stringResource(R.string.end_of_list), fontSize = 14.sp, lineHeight = 20.sp, color = ReaderTheme.colors.muted)
-        OutlineButton(
-            stringResource(R.string.refresh),
-            onClick = onRefresh,
-            modifier = Modifier.heightIn(min = 48.dp),
-            icon = Icons.Outlined.Refresh,
-            enabled = !refreshing,
-            iconModifier = Modifier.rotate(angle),
-        )
+    val content = if (refreshing) colors.muted else colors.text
+    Column {
+        Row(
+            Modifier
+                .fillMaxWidth()
+                .heightIn(min = 56.dp)
+                .clickable(enabled = !refreshing, role = Role.Button, onClick = onRefresh)
+                .padding(horizontal = 16.dp),
+            horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.CenterHorizontally),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Icon(Icons.Outlined.Refresh, contentDescription = null, tint = content, modifier = Modifier.size(18.dp).rotate(angle))
+            Text(stringResource(R.string.refresh), fontSize = 14.sp, lineHeight = 20.sp, color = content)
+        }
+        HorizontalDivider(color = colors.line)
     }
 }
 
@@ -240,6 +240,7 @@ private fun age(published: Long): String {
 private fun EntryCard(
     entry: Entry,
     source: String,
+    topics: List<String>,
     active: Boolean,
     onOpen: () -> Unit,
     onToggleRead: () -> Unit,
@@ -326,7 +327,7 @@ private fun EntryCard(
                 }
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Text(
-                        entry.categories.joinToString(" · "),
+                        topics.joinToString(" · "),
                         modifier = Modifier.weight(1f),
                         fontSize = 12.sp, lineHeight = 16.sp,
                         color = colors.read,

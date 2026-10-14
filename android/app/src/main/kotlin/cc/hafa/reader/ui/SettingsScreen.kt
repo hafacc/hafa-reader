@@ -3,17 +3,12 @@ package cc.hafa.reader.ui
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ColumnScope
-import androidx.compose.foundation.layout.ExperimentalLayoutApi
-import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
-import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.Close
 import androidx.compose.material3.DropdownMenuItem
@@ -32,6 +27,7 @@ import androidx.compose.material3.TextFieldColors
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -49,16 +45,21 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import cc.hafa.reader.R
+import cc.hafa.reader.core.ReadingFont
 import cc.hafa.reader.core.Selection
 import cc.hafa.reader.core.Sort
-import cc.hafa.reader.core.hasWord
+import cc.hafa.reader.core.byCount
+import cc.hafa.reader.core.knownWordCounts
 import cc.hafa.reader.core.topicOff
+import cc.hafa.reader.core.wordCounts
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 
 /** Which list of words the field adds to. */
 private enum class WordMode { Hide, Only }
 
 /** The current view's settings: name, sort, words, topics, and the feed's group or the group's removal. */
-@OptIn(ExperimentalLayoutApi::class, ExperimentalMaterial3Api::class)
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun SettingsScreen(snapshot: Snapshot, viewModel: ReaderViewModel) {
     val (state, view) = snapshot
@@ -73,8 +74,9 @@ fun SettingsScreen(snapshot: Snapshot, viewModel: ReaderViewModel) {
     var draft by remember { mutableStateOf("") }
     var confirming by rememberConfirming()
     val words = if (mode == WordMode.Hide) settings.hideWords else settings.onlyWords
-    val wordCounts = remember(view.baseEntries, words) {
-        words.associateWith { word -> view.baseEntries.count { entry -> hasWord(listOf(word), entry) } }
+    val entries = view.baseEntries
+    val wordCounts by produceState(knownWordCounts(entries, words) ?: emptyMap(), entries, words) {
+        value = withContext(Dispatchers.Default) { wordCounts(entries, words) }
     }
 
     fun changeWords(next: List<String>) {
@@ -95,15 +97,11 @@ fun SettingsScreen(snapshot: Snapshot, viewModel: ReaderViewModel) {
         bottomBar = { scrollBehavior -> BackBottomBar(stringResource(R.string.settings), scrollBehavior, viewModel::back) },
     ) { padding ->
         Column(
-            Modifier
-                .fillMaxSize()
-                .padding(padding)
-                .verticalScroll(rememberScrollState())
-                .padding(horizontal = 20.dp, vertical = 24.dp),
+            Modifier.scrollingScreen(padding),
             verticalArrangement = Arrangement.spacedBy(32.dp),
         ) {
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                Text(title, fontFamily = Fraunces, fontWeight = FontWeight.Bold, fontSize = 30.sp, lineHeight = 36.sp)
+                Text(title, fontFamily = ReaderTheme.readingFamily, fontWeight = FontWeight.Bold, fontSize = 30.sp, lineHeight = 36.sp)
                 if (feed != null && feed.error.isNotEmpty()) {
                     Text(problemText(feed.error), fontSize = 14.sp, lineHeight = 20.sp, color = MaterialTheme.colorScheme.error)
                 }
@@ -133,6 +131,17 @@ fun SettingsScreen(snapshot: Snapshot, viewModel: ReaderViewModel) {
                 )
             }
 
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Text(stringResource(R.string.reading_font_label), fontSize = 14.sp, lineHeight = 20.sp, fontWeight = FontWeight.Medium)
+                Segmented(
+                    listOf(ReadingFont.Literata to stringResource(R.string.font_literata), ReadingFont.PublicSans to stringResource(R.string.font_public_sans)),
+                    viewModel.readingFont,
+                    viewModel::chooseReadingFont,
+                    Modifier.fillMaxWidth(),
+                )
+                Text(stringResource(R.string.reading_font_hint), fontSize = 12.sp, lineHeight = 16.sp, color = colors.muted)
+            }
+
             // Starred lists what was starred by hand, so it offers only the sort.
             if (selection != Selection.Starred) Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
                 Text(stringResource(R.string.rules_label), fontSize = 14.sp, lineHeight = 20.sp, fontWeight = FontWeight.Medium)
@@ -154,38 +163,34 @@ fun SettingsScreen(snapshot: Snapshot, viewModel: ReaderViewModel) {
                     colors = readerFieldColors(),
                 )
                 if (words.isNotEmpty()) {
-                    FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        for (word in words) {
-                            val removeLabel = stringResource(R.string.remove_rule)
-                            InputChip(
-                                selected = false,
-                                onClick = { changeWords(words.filter { known -> known != word }) },
-                                label = { Text(word) },
-                                trailingIcon = {
-                                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                                        Text((wordCounts[word] ?: 0).toString(), fontFamily = FontFamily.Monospace, fontSize = 12.sp, color = colors.muted)
-                                        Icon(Icons.Outlined.Close, contentDescription = removeLabel, modifier = Modifier.size(InputChipDefaults.IconSize))
-                                    }
-                                },
-                                border = InputChipDefaults.inputChipBorder(enabled = true, selected = false, borderColor = colors.line),
-                            )
-                        }
+                    ChipRows(byCount(words) { word -> wordCounts[word] ?: 0 }) { word ->
+                        val removeLabel = stringResource(R.string.remove_rule, word)
+                        InputChip(
+                            selected = false,
+                            onClick = { changeWords(words.filter { known -> known != word }) },
+                            label = { Text(word) },
+                            trailingIcon = {
+                                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                                    Text((wordCounts[word] ?: 0).toString(), fontFamily = FontFamily.Monospace, fontSize = 12.sp, color = colors.muted)
+                                    Icon(Icons.Outlined.Close, contentDescription = removeLabel, modifier = Modifier.size(InputChipDefaults.IconSize))
+                                }
+                            },
+                            border = InputChipDefaults.inputChipBorder(enabled = true, selected = false, borderColor = colors.line),
+                        )
                     }
                 }
             }
 
-            if (selection != Selection.Starred && view.topics.isNotEmpty()) {
+            if (selection != Selection.Starred && view.topicOrder.counts.isNotEmpty()) {
                 Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
                     Text(stringResource(R.string.topics), fontSize = 14.sp, lineHeight = 20.sp, fontWeight = FontWeight.Medium)
-                    FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        for (item in view.topics) {
-                            TopicChip(
-                                item.topic,
-                                off = topicOff(settings, item.topic),
-                                onToggle = { model.toggleTopic(item.topic, fromArticle = false) },
-                                count = item.count,
-                            )
-                        }
+                    ChipRows(view.topicOrder.counts) { item ->
+                        TopicChip(
+                            item.topic,
+                            off = topicOff(settings, item.topic),
+                            onToggle = { model.toggleTopic(item.topic, fromArticle = false) },
+                            count = item.count,
+                        )
                     }
                     Text(stringResource(R.string.topics_hint), fontSize = 12.sp, lineHeight = 16.sp, color = colors.muted)
                 }
@@ -193,7 +198,14 @@ fun SettingsScreen(snapshot: Snapshot, viewModel: ReaderViewModel) {
 
             if (feed != null) {
                 DividedSection {
-                    GroupField(feed.folder, view.folders) { name -> model.setFolder(feed.id, name) }
+                    GroupField(
+                        feed.folder,
+                        view.folders,
+                        label = stringResource(R.string.group_label),
+                        placeholder = stringResource(R.string.no_group),
+                        hint = stringResource(R.string.group_hint),
+                        onCommit = { name -> model.setFolder(feed.id, name) },
+                    )
                     ConfirmButton(
                         label = stringResource(R.string.unsubscribe),
                         confirmLabel = stringResource(R.string.confirm_unsubscribe),
@@ -276,23 +288,40 @@ private fun CommitField(label: String, value: String, onCommit: (String) -> Unit
     )
 }
 
-/** The feed's group: type a name or pick one in use; empty takes the feed out of its group. */
+/**
+ * A group name field: type a name or pick one of [folders], suggested as it is typed. [onEdit] gets every edit and
+ * [onCommit] the name when Done is pressed or the field is left changed from [current]; [placeholder] is shown while
+ * empty.
+ */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun GroupField(current: String, folders: List<String>, onCommit: (String) -> Unit) {
+fun GroupField(
+    current: String,
+    folders: List<String>,
+    label: String,
+    placeholder: String,
+    hint: String? = null,
+    enabled: Boolean = true,
+    onEdit: (String) -> Unit = {},
+    onCommit: (String) -> Unit = {},
+) {
     var text by remember(current) { mutableStateOf(current) }
     var focused by remember { mutableStateOf(false) }
     val focusManager = LocalFocusManager.current
     val suggestions = folders.filter { name -> name != text && name.contains(text.trim(), ignoreCase = true) }
+    fun edit(next: String) {
+        text = next
+        onEdit(next)
+    }
     ExposedDropdownMenuBox(
-        expanded = focused && suggestions.isNotEmpty(),
+        expanded = focused && enabled && suggestions.isNotEmpty(),
         onExpandedChange = {},
     ) {
         OutlinedTextField(
             value = text,
-            onValueChange = { next -> text = next },
+            onValueChange = ::edit,
             modifier = Modifier
-                .menuAnchor(ExposedDropdownMenuAnchorType.PrimaryEditable)
+                .menuAnchor(ExposedDropdownMenuAnchorType.PrimaryEditable, enabled)
                 .fillMaxWidth()
                 .onFocusChanged { focus ->
                     if (focused && !focus.isFocused && text.trim() != current) {
@@ -300,23 +329,28 @@ private fun GroupField(current: String, folders: List<String>, onCommit: (String
                     }
                     focused = focus.isFocused
                 },
-            label = { Text(stringResource(R.string.group_label)) },
-            placeholder = { Text(stringResource(R.string.no_group)) },
-            supportingText = { Text(stringResource(R.string.group_hint)) },
+            enabled = enabled,
+            label = { Text(label) },
+            placeholder = { Text(placeholder) },
+            supportingText = if (hint != null) {
+                { Text(hint) }
+            } else {
+                null
+            },
             singleLine = true,
             keyboardOptions = KeyboardOptions(capitalization = KeyboardCapitalization.Sentences, imeAction = ImeAction.Done),
             keyboardActions = KeyboardActions(onDone = { focusManager.clearFocus() }),
             colors = readerFieldColors(),
         )
         ExposedDropdownMenu(
-            expanded = focused && suggestions.isNotEmpty(),
+            expanded = focused && enabled && suggestions.isNotEmpty(),
             onDismissRequest = {},
         ) {
             for (name in suggestions) {
                 DropdownMenuItem(
                     text = { Text(name) },
                     onClick = {
-                        text = name
+                        edit(name)
                         focusManager.clearFocus()
                     },
                     contentPadding = ExposedDropdownMenuDefaults.ItemContentPadding,

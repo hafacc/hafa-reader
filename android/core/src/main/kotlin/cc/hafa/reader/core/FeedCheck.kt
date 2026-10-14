@@ -2,9 +2,11 @@ package cc.hafa.reader.core
 
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import okhttp3.HttpUrl
 import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
 import okhttp3.OkHttpClient
 import okhttp3.Request
+import okhttp3.Response
 import okhttp3.coroutines.executeAsync
 import java.io.IOException
 import java.io.InterruptedIOException
@@ -51,16 +53,32 @@ private fun Request.Builder.validator(name: String, value: String) {
     }
 }
 
+/** Most redirects off https followed at their https addresses in one fetch, as many as browsers follow in all. */
+private const val MAX_UPGRADED_REDIRECTS = 20
+
+/** [url] at https, its port moved from http's default to https's, as a browser upgrading an insecure request does. */
+private fun upgradedUrl(url: HttpUrl): HttpUrl =
+    if (url.isHttps) {
+        url
+    } else {
+        url.newBuilder().scheme("https").port(if (url.port == HTTP_PORT) HTTPS_PORT else url.port).build()
+    }
+
+private const val HTTP_PORT = 80
+private const val HTTPS_PORT = 443
+
 /**
  * A [FeedFetcher] over OkHttp; a failed request has status zero, and an answer
  * over [MAX_BODY_BYTES] has no text. Plain http addresses are refused unless
- * [httpsOnly] is off, which only tests against a local server do.
+ * [httpsOnly] is off, which only tests against a local server do. A redirect
+ * from https to plain http is followed at its https address instead, as the
+ * web's extension does, so no plain http request is ever sent.
  */
 class HttpFeedFetcher(
     client: OkHttpClient,
     private val httpsOnly: Boolean = true,
 ) : FeedFetcher {
-    // A redirect from https to plain http is not followed.
+    // A redirect between https and plain http comes back unfollowed, to be followed here at https.
     private val client = client.newBuilder().followSslRedirects(!httpsOnly).build()
 
     override suspend fun fetch(url: String, etag: String, lastModified: String, timeoutMs: Long): FetchOutcome {
@@ -70,45 +88,62 @@ class HttpFeedFetcher(
         } else if (httpsOnly && !address.isHttps) {
             FetchOutcome(status = 0, insecure = true)
         } else withContext(Dispatchers.IO) {
-            val request = Request.Builder().url(address).apply {
-                header("User-Agent", USER_AGENT)
-                header("Accept", "*/*")
-                validator("If-None-Match", etag)
-                validator("If-Modified-Since", lastModified)
-            }.build()
-            val call = client.newCall(request)
-            call.timeout().timeout(timeoutMs, TimeUnit.MILLISECONDS)
+            val deadline = System.nanoTime() + TimeUnit.MILLISECONDS.toNanos(timeoutMs)
+            var next: HttpUrl = address
+            var outcome: FetchOutcome? = null
+            var hops = 0
             try {
-                call.executeAsync().use { response ->
-                    // A redirect left unfollowed leads off https, which counts as no answer.
-                    if (httpsOnly && response.isRedirect) {
-                        return@use FetchOutcome(status = 0, insecure = true)
-                    }
-                    // A body over the limit is left unread, so it counts as no readable feed.
-                    val text = if (response.code == 200) {
-                        if (response.body.source().request(MAX_BODY_BYTES + 1)) {
-                            ""
+                while (outcome == null) {
+                    val request = Request.Builder().url(next).apply {
+                        header("User-Agent", USER_AGENT)
+                        header("Accept", "*/*")
+                        validator("If-None-Match", etag)
+                        validator("If-Modified-Since", lastModified)
+                    }.build()
+                    val call = client.newCall(request)
+                    call.timeout().timeout(maxOf(1L, deadline - System.nanoTime()), TimeUnit.NANOSECONDS)
+                    call.executeAsync().use { response ->
+                        val location = response.header("Location")?.let { target -> response.request.url.resolve(target) }
+                        if (httpsOnly && response.isRedirect && location != null) {
+                            if (hops < MAX_UPGRADED_REDIRECTS) {
+                                hops += 1
+                                next = upgradedUrl(location)
+                            } else {
+                                outcome = FetchOutcome(status = 0)
+                            }
                         } else {
-                            decodeBody(response.body.bytes(), response.header("Content-Type") ?: "")
+                            outcome = answerOf(response)
                         }
-                    } else {
-                        ""
                     }
-                    FetchOutcome(
-                        status = response.code,
-                        text = text,
-                        url = response.request.url.toString(),
-                        etag = response.header("ETag") ?: "",
-                        lastModified = response.header("Last-Modified") ?: "",
-                        hint = hintFromHeaders(response::header),
-                    )
                 }
             } catch (_: InterruptedIOException) {
-                FetchOutcome(status = 0, timedOut = true)
+                outcome = FetchOutcome(status = 0, timedOut = true)
             } catch (_: IOException) {
-                FetchOutcome(status = 0)
+                outcome = FetchOutcome(status = 0)
             }
+            checkNotNull(outcome)
         }
+    }
+
+    /** What an answer says; a body over the limit is left unread, so it counts as no readable feed. */
+    private fun answerOf(response: Response): FetchOutcome {
+        val text = if (response.code == 200) {
+            if (response.body.source().request(MAX_BODY_BYTES + 1)) {
+                ""
+            } else {
+                decodeBody(response.body.bytes(), response.header("Content-Type") ?: "")
+            }
+        } else {
+            ""
+        }
+        return FetchOutcome(
+            status = response.code,
+            text = text,
+            url = response.request.url.toString(),
+            etag = response.header("ETag") ?: "",
+            lastModified = response.header("Last-Modified") ?: "",
+            hint = hintFromHeaders(response::header),
+        )
     }
 }
 
