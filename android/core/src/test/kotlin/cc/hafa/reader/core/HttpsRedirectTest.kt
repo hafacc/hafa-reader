@@ -10,6 +10,7 @@ import kotlin.test.AfterTest
 import kotlin.test.BeforeTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFalse
 import kotlin.test.assertTrue
 
 class HttpsRedirectTest {
@@ -38,12 +39,26 @@ class HttpsRedirectTest {
     }
 
     @Test
-    fun `a redirect from https to plain http counts as no answer`() = runTest {
+    fun `a redirect from https to plain http is followed at https, never at http`() = runTest {
+        val upgraded = secure.url("/moved")
+        val target = upgraded.newBuilder().scheme("http").build()
+        secure.enqueue(MockResponse.Builder().code(302).addHeader("Location", target.toString()).build())
+        secure.enqueue(MockResponse.Builder().body("<rss/>").build())
+        val outcome = fetcher.fetch(secure.url("/feed").toString(), "", "", FETCH_TIMEOUT_MS)
+        assertEquals(200, outcome.status)
+        assertEquals(upgraded.toString(), outcome.url)
+        secure.takeRequest()
+        assertEquals("/moved", secure.takeRequest().url.encodedPath)
+    }
+
+    @Test
+    fun `a redirect to plain http with no https behind it fails without a plain request`() = runTest {
         secure.enqueue(MockResponse.Builder().code(302).addHeader("Location", plain.url("/feed").toString()).build())
         val outcome = fetcher.fetch(secure.url("/feed").toString(), "", "", FETCH_TIMEOUT_MS)
         assertEquals(0, outcome.status)
-        assertTrue(outcome.insecure)
-        assertEquals(0, plain.requestCount)
+        assertFalse(outcome.insecure)
+        // The http server sees only the https attempt's handshake, which it cannot read as a request.
+        assertTrue(List(plain.requestCount) { plain.takeRequest() }.all { request -> request.failure != null })
     }
 
     @Test

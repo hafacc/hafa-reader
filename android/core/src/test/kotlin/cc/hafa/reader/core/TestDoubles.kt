@@ -87,6 +87,7 @@ internal class MemoryStore : ReaderStore {
 internal class MemoryPreferences : ReaderPreferences {
     override var unreadOnly = true
     override var lastView = "all"
+    override var readingFont = ReadingFont.Literata
 }
 
 /** Answers by address; anything unknown does not answer. */

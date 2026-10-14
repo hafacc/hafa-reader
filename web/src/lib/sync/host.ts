@@ -25,6 +25,8 @@ export interface SyncReport {
   retention: Retention;
   /** Whether the account's feeds have come from the server since signing in; false when signed out. */
   feedsKnown: boolean;
+  /** Whether what the account had when this session began is stored here, all but entries older than the recent window; false when signed out. */
+  caughtUp: boolean;
 }
 
 /** Everything stored on this device, as sync reads it. */

@@ -92,6 +92,7 @@ jobs:
         working-directory: shared
       - run: bun install --frozen-lockfile
       - run: bun lint
+      - run: bun test
       - run: bun pack
       - uses: actions/upload-artifact@v7
         with:

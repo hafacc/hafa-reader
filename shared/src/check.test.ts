@@ -6,6 +6,7 @@ import {
   type ScheduledFeed,
   type Schedules,
   statusProblem,
+  takeFirstChecks,
 } from "./check.ts";
 import { sha256Hex } from "./id.ts";
 import type { FetchOutcome } from "./protocol.ts";
@@ -180,6 +181,81 @@ test("tracking a new address resets the feed but keeps what it learned", () => {
     hash: "",
     nextFetch: 0,
   });
+});
+
+test("an answer already taken in counts as the first check of a feed starting over", async () => {
+  const first = answer(rss(["a", "b"]), { etag: '"1"' });
+  const fresh = scheduled({ id: "new" });
+  const known = scheduled({
+    id: "known",
+    hash: "h",
+    lastChecked: NOW - HOUR,
+    nextFetch: NOW + HOUR,
+  });
+  const [taken, kept, untouched] = await takeFirstChecks(
+    [fresh, known, scheduled({ id: "other" })],
+    [
+      { id: "new", url: fresh.url, empty: false, first },
+      { id: "known", url: known.url, empty: false, first },
+      { id: "other", url: fresh.url, empty: false },
+    ],
+    NOW,
+  );
+  expect(taken).toEqual((await judge(fresh, first, NOW)).feed);
+  expect(taken?.lastChecked).toBe(NOW);
+  expect(taken?.nextFetch).toBeGreaterThan(NOW);
+  expect(taken?.etag).toBe('"1"');
+  expect(kept).toEqual(known);
+  expect(untouched).toEqual(scheduled({ id: "other" }));
+});
+
+test("a malformed answer is skipped and leaves its feed due, without spoiling the rest", async () => {
+  const first = answer(rss(["a"]));
+  const { text: _text, ...withoutText } = first;
+  const malformed: unknown[] = [
+    null,
+    "first",
+    42,
+    withoutText,
+    { ...first, status: "200" },
+    { ...first, insecure: 0 },
+  ];
+  const feeds = malformed.map((value, index) => ({
+    id: `bad-${index}`,
+    url: "https://feed.example/rss",
+    empty: false,
+    // what a web app with a bug, or a newer one, might send
+    first: JSON.parse(JSON.stringify(value)),
+  }));
+  const tracked = [
+    ...feeds.map((feed) => scheduled({ id: feed.id })),
+    scheduled({ id: "good" }),
+  ];
+  const result = await takeFirstChecks(
+    tracked,
+    [...feeds, { id: "good", url: tracked[0]?.url ?? "", empty: false, first }],
+    NOW,
+  );
+  expect(result.slice(0, -1)).toEqual(tracked.slice(0, -1));
+  expect(result.at(-1)?.lastChecked).toBe(NOW);
+});
+
+test("an answer for a feed not tracked is ignored", async () => {
+  const tracked = [scheduled()];
+  expect(
+    await takeFirstChecks(
+      tracked,
+      [
+        {
+          id: "elsewhere",
+          url: "https://feed.example/rss",
+          empty: false,
+          first: answer(rss(["a"])),
+        },
+      ],
+      NOW,
+    ),
+  ).toEqual(tracked);
 });
 
 test("tracking starts a new feed due now and retires untracked ones", () => {

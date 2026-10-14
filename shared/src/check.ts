@@ -28,7 +28,7 @@ export function statusProblem(status: number): string {
 }
 
 /** A tracked feed with its schedule and what its last check saw. */
-export interface ScheduledFeed extends Omit<TrackedFeed, "empty"> {
+export interface ScheduledFeed extends Omit<TrackedFeed, "empty" | "first"> {
   /** `ETag` of the last body seen, sent back as `If-None-Match`. */
   etag: string;
   /** `Last-Modified` of the last body seen, sent back as `If-Modified-Since`. */
@@ -338,4 +338,61 @@ export function retrack(
       .map((feed) => ({ ...feed, retiredAt: nowMs })),
   ];
   return { tracked, retired };
+}
+
+/** Whether a value sent as `first` has every field of a fetch's answer, with its type. */
+function isFetchOutcome(value: unknown): value is FetchOutcome {
+  return (
+    typeof value === "object" &&
+    value !== null &&
+    "status" in value &&
+    typeof value.status === "number" &&
+    "url" in value &&
+    typeof value.url === "string" &&
+    "text" in value &&
+    typeof value.text === "string" &&
+    "etag" in value &&
+    typeof value.etag === "string" &&
+    "lastModified" in value &&
+    typeof value.lastModified === "string" &&
+    "hint" in value &&
+    typeof value.hint === "number" &&
+    "insecure" in value &&
+    typeof value.insecure === "boolean"
+  );
+}
+
+/**
+ * Count each answer the web app already took in (`first`) as the check of a
+ * feed whose schedule starts over (new, or reset by a new address), so it is
+ * not fetched again at once. Other feeds keep their schedules; what the answer
+ * held is not handed on again. A `first` that is not a fetch's answer, or
+ * that cannot be judged, is skipped, leaving that feed due.
+ */
+export async function takeFirstChecks(
+  tracked: ScheduledFeed[],
+  feeds: TrackedFeed[],
+  nowMs: number,
+): Promise<ScheduledFeed[]> {
+  const firstById = new Map<string, FetchOutcome>();
+  for (const feed of feeds) {
+    const first: unknown = feed.first;
+    if (isFetchOutcome(first)) {
+      firstById.set(feed.id, first);
+    }
+  }
+  return await Promise.all(
+    tracked.map(async (feed) => {
+      const first = firstById.get(feed.id);
+      let scheduled = feed;
+      if (first !== undefined && feed.nextFetch === 0 && feed.hash === "") {
+        try {
+          scheduled = (await judge(feed, first, nowMs)).feed;
+        } catch {
+          scheduled = feed;
+        }
+      }
+      return scheduled;
+    }),
+  );
 }

@@ -6,6 +6,9 @@
   "minimum_chrome_version": "119",
   "permissions": ["alarms", "storage", "unlimitedStorage"],
   "host_permissions": ["https://*/*"],
+  "content_security_policy": {
+    "extension_pages": "script-src 'self'; object-src 'self'; upgrade-insecure-requests"
+  },
   "background": {
     "service_worker": "background.js",
     "type": "module"

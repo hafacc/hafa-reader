@@ -6,14 +6,36 @@ import {
   hasWord,
   keeper,
   topicCounts,
+  topicRanks,
   type ViewSettings,
 } from "$shared/filter.ts";
+import {
+  type HttpsMatch,
+  isPlainHttp,
+  type KnownFeed,
+  mapConcurrently,
+  PROBE_CONCURRENCY,
+  plainAddress,
+  probeAllowed,
+  probeHttps,
+  sameFeed,
+  settledAnswer,
+  UNSETTLED_TRIES,
+  webAddress,
+} from "$shared/https.ts";
 import { entryId, feedId } from "$shared/id.ts";
-import type { FeedStatus, PulledFeed, TrackedFeed } from "$shared/protocol.ts";
+import type {
+  FeedStatus,
+  FetchOutcome,
+  PulledFeed,
+  TrackedFeed,
+} from "$shared/protocol.ts";
 import { discoverIconLinks, feedCandidates } from "$shared/resolve.ts";
+import { overdueAt } from "$shared/schedule.ts";
 import { copy } from "./copy.ts";
 import { Database } from "./db.ts";
 import { ExtensionClient } from "./extension.svelte.ts";
+import { gateWakeAt, type LoadGate, startGate, stepGate } from "./load-gate.ts";
 import { parseOpml } from "./opml.ts";
 import { compareEntries } from "./order.ts";
 import {
@@ -23,12 +45,18 @@ import {
   PictureFetcher,
   savingData,
 } from "./prefetch.ts";
+import {
+  type ReadingFont,
+  storedReadingFont,
+  storeReadingFont,
+} from "./reading-font.ts";
 import { excerpt, plainBody, sanitize } from "./sanitize.ts";
 import { bodyHash } from "./sync/bodies.ts";
 import { bodyMayBeGone } from "./sync/documents.ts";
 import type { LocalData, RemoteChange } from "./sync/host.ts";
 import { FEED_TOMBSTONE, SETTINGS_TOMBSTONE } from "./sync/merge.ts";
 import { Sync } from "./sync.svelte.ts";
+import { trackMessages } from "./track.ts";
 import type { Entry, Feed, SavedSettings, Selection } from "./types.ts";
 import { isWebAddress, normalizeUrl } from "./urls.ts";
 
@@ -41,6 +69,8 @@ const MAX_DISCOVERY_TRIES = 12;
 const MAX_DRAINS = 20;
 // how long a notice stays up
 const NOTICE_MS = 4000;
+// longest delay setTimeout takes; a later time is reached in steps
+const MAX_TIMER_MS = 2 ** 31 - 1;
 const VIEW_KEY = "h-reader:view";
 // Feedly's public feed search, reached through the extension
 const SEARCH_ADDRESS = "https://cloud.feedly.com/v3/search/feeds";
@@ -180,6 +210,21 @@ function keptBy(keeps: Keeper | undefined, entry: Entry): boolean {
   return keeps === undefined || keeps(entry);
 }
 
+/** How an OPML import went. */
+export interface ImportResult {
+  /** Feeds the file lists with a web address. */
+  found: number;
+  /** How many of them were new and added. */
+  added: number;
+  /** Plain http feeds left out because no https version was found. */
+  skipped: number;
+}
+
+/** What a list of feeds says of one plain http feed, to try it over https. */
+function listedFeed(url: string, title: string, siteUrl: string): KnownFeed {
+  return { url, title, siteUrl, guids: [], links: [] };
+}
+
 /** A feed found by searching, ready to subscribe to. */
 export interface FeedHit {
   /** Feed address. */
@@ -227,6 +272,7 @@ function isHit(value: unknown): value is {
   title?: string;
   description?: string;
   iconUrl?: string;
+  website?: string;
   subscribers?: number;
 } {
   return (
@@ -293,6 +339,25 @@ function holdOrder<Item>(
   return result;
 }
 
+/** Whether two lists hold the same articles in the same order, whatever their marks. */
+function sameArticles(
+  first: readonly Entry[],
+  second: readonly Entry[],
+): boolean {
+  return (
+    first.length === second.length &&
+    first.every((entry, index) => {
+      const other = second[index];
+      // a mark change copies an entry and keeps its categories; new content comes as a new list
+      return (
+        other !== undefined &&
+        other.id === entry.id &&
+        other.categories === entry.categories
+      );
+    })
+  );
+}
+
 /** Everything the interface shows, and the actions that change it. */
 export class Reader {
   /** Subscribed feeds. */
@@ -316,6 +381,8 @@ export class Reader {
   heldTopics = $state<Record<string, string[]>>({});
   /** Only list articles not yet read, and feeds that have any; one switch for every view. */
   unreadOnly = $state(true);
+  /** Font for article text and titles on this browser. */
+  readingFont = $state<ReadingFont>(storedReadingFont());
   /** Id of the open entry; empty when none is open. */
   currentId = $state("");
   /** Sanitized HTML of the open entry. */
@@ -330,6 +397,24 @@ export class Reader {
   adding = $state(false);
   /** A short message shown above the bottom of the screen; empty when none is up. */
   notice = $state("");
+  /** Whether a feed's scheduled check is overdue, as the extension last reported. */
+  overdue = $state(false);
+  /** Whether the extension was checking or saving feeds when it last reported. */
+  extensionChecking = $state(false);
+  /** The loading screen, which holds the person while what can still change the lists loads; see `updateGate`. */
+  gate = $state.raw<LoadGate>(startGate(Date.now()));
+  /**
+   * Ids of the articles the list may show; ones that arrive later wait until
+   * the list is next settled (see `settle`), so rows never move under the
+   * person. Undefined lets every article in.
+   */
+  heldEntries = $state.raw<ReadonlySet<string> | undefined>();
+  /** Ids of the feeds the sidebar may list, held like `heldEntries`; undefined lets every feed in. */
+  heldFeeds = $state.raw<ReadonlySet<string> | undefined>();
+  /** Imports whose feeds are being checked for the first time. */
+  importing = $state(0);
+  /** Whether the first look for the extension, and the take of what it found while the app was closed, has ended. */
+  connected = $state(false);
   /** The browser extension that fetches feeds. */
   readonly extension = new ExtensionClient();
   /** Optional sign-in and sync. */
@@ -347,6 +432,7 @@ export class Reader {
 
   private db: Database | undefined;
   private noticeTimer: ReturnType<typeof setTimeout> | undefined;
+  private overdueTimer: ReturnType<typeof setTimeout> | undefined;
   /** Bodies kept in memory when there is no database. */
   private readonly memoryBodies = new Map<string, string>();
   /** Pictures of the open entry's neighbors, fetched ahead so stepping shows them at once. */
@@ -358,8 +444,43 @@ export class Reader {
   /** When each removed feed or setting was removed, by tombstone key. */
   private tombstones = new Map<string, number>();
   private draining: Promise<void> | undefined;
+  private gateTimer: ReturnType<typeof setTimeout> | undefined;
   private readonly manual = new Set<string>();
   private readonly iconsTried = new Set<string>();
+  /** Plain http feeds not to try over https again while the app is open: tried with a definite answer, being tried, or out of tries, by id. */
+  private readonly httpTried = new Set<string>();
+  /** Tries of each plain http feed's https address that got no definite answer since the app opened, by id. */
+  private readonly httpMisses = new Map<string, number>();
+  /** The view's articles as last counted; see `countedArticles`. */
+  private lastCounted: readonly Entry[] = [];
+
+  /**
+   * Whether a refresh would help: a feed's scheduled check is overdue and
+   * nothing is checking feeds now, so it clears once a refresh has saved them.
+   */
+  refreshSuggested = $derived(
+    this.overdue &&
+      !this.refreshing &&
+      !this.extensionChecking &&
+      this.extension.version !== "",
+  );
+
+  /**
+   * Whether something that can still change the lists is loading: the stored
+   * data, the extension and what it found while the app was closed, the
+   * first check of imported feeds, or, while the person waits for it (see
+   * `Sync.awaited`), the account's data.
+   */
+  loadingBusy = $derived(
+    !this.checked ||
+      (this.extension.version !== "" &&
+        (!(this.loaded && this.connected) ||
+          this.importing > 0 ||
+          (this.sync.awaited && this.accountArriving()))),
+  );
+
+  /** Whether the loading screen holds the person: nothing behind it takes taps or keys. */
+  gateBlocks = $derived(this.gate.phase !== "open");
 
   /** Whether the current view has words and topics; Starred shows every starred article and has only a sort. */
   filtersApply = $derived(this.selection.kind !== "starred");
@@ -413,17 +534,46 @@ export class Reader {
   /** Entries in the current view, in the chosen order. */
   visible = $derived.by(() => {
     const unreadOnly = this.unreadOnly && this.selection.kind !== "starred";
-    const { kept, pinned, currentId } = this;
+    const { kept, pinned, currentId, heldEntries } = this;
     return this.ordered.filter(
       (entry) =>
         entry.id === currentId ||
-        (kept.has(entry.id) &&
+        ((heldEntries === undefined || heldEntries.has(entry.id)) &&
+          kept.has(entry.id) &&
           !(unreadOnly && entry.read && !pinned[entry.id])),
     );
   });
 
-  /** The topics in the current view, commonest first. */
-  topics = $derived(topicCounts(this.baseEntries));
+  /**
+   * The current view's articles for counting topics and words: the same list
+   * while only marks change, so the counts are not worked out again on every
+   * read or star. Its marks may be out of date.
+   */
+  private readonly countedArticles = $derived.by(() => {
+    if (!sameArticles(this.lastCounted, this.baseEntries)) {
+      this.lastCounted = this.baseEntries;
+    }
+    return this.lastCounted;
+  });
+
+  /** The topics in the current view with how many articles carry each, commonest first. */
+  topics = $derived(topicCounts(this.countedArticles));
+
+  /** Each topic's place in `topics`, for ordering an article's topics. */
+  topicOrder = $derived(topicRanks(this.topics));
+
+  /** How many of the current view's articles have each of its words in the title or summary. */
+  wordCounts = $derived.by(() => {
+    const { hideWords, onlyWords } = this.viewSettings;
+    const counts = new Map<string, number>();
+    for (const word of [...hideWords, ...onlyWords]) {
+      counts.set(
+        word,
+        this.countedArticles.filter((entry) => hasWord([word], entry)).length,
+      );
+    }
+    return counts;
+  });
 
   /** Name of the current view. */
   viewTitle = $derived.by(() => {
@@ -581,6 +731,84 @@ export class Reader {
     ];
   });
 
+  /**
+   * Let everything that has arrived into the lists, as when the loading
+   * screen lets the person in and after a refresh: the article list and the
+   * sidebar take in new articles and feeds, and the sidebar's order is worked
+   * out again.
+   */
+  settle(): void {
+    this.freezeOrder();
+    this.settleList();
+    this.heldFeeds = new Set(this.feeds.map((feed) => feed.id));
+  }
+
+  /** Let every article that has arrived into the list. */
+  private settleList(): void {
+    this.heldEntries = new Set(this.entries.map((entry) => entry.id));
+  }
+
+  /**
+   * Before articles or feeds arrive in the background: a feed the sidebar
+   * does not list now stays out until it is next settled, so what arrives
+   * adds no rows. Returns what to do once they have arrived: a list or
+   * sidebar that showed nothing takes them in, since no row can move.
+   */
+  private holdLists(): () => void {
+    const listShowed = this.visible.length > 0;
+    const listedNow = this.feeds.filter((feed) => this.listed(feed));
+    if (this.heldFeeds !== undefined) {
+      this.heldFeeds = new Set(listedNow.map((feed) => feed.id));
+    }
+    return (): void => {
+      if (!listShowed && this.heldEntries !== undefined) {
+        this.settleList();
+      }
+      if (listedNow.length === 0 && this.heldFeeds !== undefined) {
+        this.freezeOrder();
+        this.heldFeeds = new Set(this.feeds.map((feed) => feed.id));
+      }
+    };
+  }
+
+  /**
+   * Bring the loading screen up to date with whether something that can
+   * still change the lists is loading (`busy`); it runs again on its own
+   * timer while it waits. Letting the person in settles the lists and stops
+   * the account's data from holding them again until they next sign in.
+   */
+  updateGate(busy: boolean = this.loadingBusy, now = Date.now()): void {
+    const before = this.gate;
+    const next = stepGate(before, busy, now);
+    if (
+      next.phase !== before.phase ||
+      next.busySince !== before.busySince ||
+      next.shownSince !== before.shownSince ||
+      next.timedOut !== before.timedOut
+    ) {
+      this.gate = next;
+    }
+    clearTimeout(this.gateTimer);
+    const wake = gateWakeAt(next);
+    this.gateTimer =
+      wake === undefined
+        ? undefined
+        : setTimeout(() => this.updateGate(), Math.max(0, wake - Date.now()));
+    if (before.phase !== "open" && next.phase === "open") {
+      this.sync.awaited = false;
+      this.settle();
+    }
+  }
+
+  /** Whether the signed-in account's data is still arriving: sync is starting, or it has not caught up and is neither offline nor failing. */
+  private accountArriving(): boolean {
+    const { status, caughtUp } = this.sync;
+    return (
+      status === "connecting" ||
+      (!caughtUp && (status === "syncing" || status === "synced"))
+    );
+  }
+
   /** Fix the sidebar order as the counts stand now. */
   freezeOrder(): void {
     this.frozenRank = undefined;
@@ -625,13 +853,17 @@ export class Reader {
     return views;
   }
 
-  /** Whether the sidebar lists a feed: it has something unread, it is the one open, or unread only is off. */
+  /**
+   * Whether the sidebar lists a feed: it is the one open, or it was there
+   * when the sidebar was last settled and has something unread or unread
+   * only is off.
+   */
   listed(feed: Feed): boolean {
     const { selection } = this;
     return (
-      !this.unreadOnly ||
-      (this.unreadByFeed.get(feed.id) ?? 0) > 0 ||
-      (selection.kind === "feed" && selection.id === feed.id)
+      (selection.kind === "feed" && selection.id === feed.id) ||
+      ((this.heldFeeds === undefined || this.heldFeeds.has(feed.id)) &&
+        (!this.unreadOnly || (this.unreadByFeed.get(feed.id) ?? 0) > 0))
     );
   }
 
@@ -668,6 +900,7 @@ export class Reader {
         ]),
       );
       this.tombstones = await this.db.loadTombstones();
+      await this.markHttpFeeds();
     } catch {
       this.db = undefined;
     }
@@ -690,14 +923,26 @@ export class Reader {
     }, NOTICE_MS);
   }
 
-  /** Look for the extension and, once found, hand it the feeds and check them. */
+  /**
+   * Look for the extension and, once found, hand it the feeds, have it check
+   * the ones that are due without waiting for them, and take in what it has
+   * found. Nothing shows as refreshing and the sidebar keeps its order; the
+   * periodic drain picks up the checks' results.
+   */
   async connect(): Promise<void> {
-    const found = await this.extension.detect();
-    this.checked = true;
-    if (found) {
-      await this.drainExtension();
-      await this.trackFeeds();
-      await this.refresh();
+    try {
+      const found = await this.extension.detect();
+      this.checked = true;
+      if (found) {
+        await this.trackFeeds();
+        logFailure(this.upgradeHttpFeeds());
+        // an extension too old to know this request answers with an error, and its own timer checks due feeds
+        await this.extension.send({ type: "checkDue" });
+        await this.drainExtension();
+      }
+    } finally {
+      this.checked = true;
+      this.connected = true;
     }
   }
 
@@ -708,13 +953,35 @@ export class Reader {
    */
   async addFeed(input: string, folder = ""): Promise<void> {
     const address = normalizeUrl(input);
-    if (!isWebAddress(address)) {
-      throw new Error("Only https addresses can be added.");
+    if (isPlainHttp(address)) {
+      throw new Error(copy.httpRefused);
+    } else if (!isWebAddress(address)) {
+      throw new Error(copy.notWebAddress);
     }
     const found = await this.discover(address);
     const id = await feedId(found.url);
-    if (this.feeds.some((feed) => feed.id === id)) {
-      this.select({ kind: "feed", id });
+    const existing = this.followed(id, [found.url]);
+    const plain = plainAddress(found.url);
+    // a feed followed at the plain http form of this address moves here when it is the same feed; a different one stays as it is
+    const atHttp = this.feeds.find(
+      (feed) =>
+        feed.url === plain && sameFeed(this.knownOf(feed), found.parsed),
+    );
+    if (existing) {
+      this.select({ kind: "feed", id: existing.id });
+    } else if (atHttp) {
+      await this.moveToHttps([
+        {
+          id: atHttp.id,
+          from: atHttp.url,
+          match: {
+            url: found.url,
+            feed: found.parsed,
+            outcome: found.outcome,
+          },
+        },
+      ]);
+      this.select({ kind: "feed", id: atHttp.id });
     } else {
       const feed: Feed = {
         id,
@@ -739,35 +1006,69 @@ export class Reader {
       await this.ingest(feed, found.parsed);
       this.select({ kind: "feed", id });
       // the answer just fetched is the first check; the extension takes over from here
-      await this.trackFeeds();
+      await this.trackFeeds(new Map([[id, found.outcome]]));
+    }
+    this.reveal(this.selection);
+  }
+
+  /** Show what the person just added: the list takes in every article that has arrived, and the sidebar lists the feed. */
+  private reveal(selection: Selection): void {
+    this.settleList();
+    if (this.heldFeeds !== undefined && selection.kind === "feed") {
+      this.heldFeeds = new Set([...this.heldFeeds, selection.id]);
     }
   }
 
   /**
-   * Subscribe to every feed in an OPML file. Returns how many feeds the file
-   * lists and how many of them were new.
+   * Subscribe to every feed in an OPML file, into `group` when given (empty
+   * for no group), else into the file's own folders. A plain http feed is
+   * tried over https and added there when it serves the same feed; otherwise
+   * it is left out. Returns how many feeds the file lists, how many of them
+   * were new, and how many http feeds were left out.
    */
-  async importOpml(source: string): Promise<{ found: number; added: number }> {
-    const items = parseOpml(source)
-      .map((item) => ({ ...item, url: normalizeUrl(item.url) }))
-      .filter((item) => isWebAddress(item.url));
-    const ids = await Promise.all(items.map((item) => feedId(item.url)));
+  async importOpml(source: string, group?: string): Promise<ImportResult> {
+    const listed = parseOpml(source).flatMap((item) => {
+      const url = normalizeUrl(item.url);
+      return url === "" ? [] : [{ ...item, url }];
+    });
+    const following = new Set(this.feeds.map((feed) => feed.url));
+    const resolved = await mapConcurrently(
+      listed,
+      PROBE_CONCURRENCY,
+      async (item) => {
+        const secure = upgradedAddress(item.url);
+        let url = secure;
+        if (
+          isPlainHttp(item.url) &&
+          !following.has(item.url) &&
+          !following.has(secure)
+        ) {
+          const { match } = await this.probe(
+            listedFeed(item.url, item.title, item.siteUrl),
+          );
+          url = match?.url ?? "";
+        }
+        return { ...item, listedUrl: item.url, url };
+      },
+    );
+    const usable = resolved.filter((item) => isWebAddress(item.url));
+    const ids = await Promise.all(usable.map((item) => feedId(item.url)));
     const added: Feed[] = [];
-    for (const [index, item] of items.entries()) {
+    for (const [index, item] of usable.entries()) {
       const id = ids[index];
       if (
         id &&
-        !this.feeds.some((feed) => feed.id === id) &&
+        !this.followed(id, [item.url, item.listedUrl]) &&
         !added.some((feed) => feed.id === id)
       ) {
         added.push({
           id,
           url: item.url,
           title: item.title || new URL(item.url).hostname,
-          siteUrl: "",
+          siteUrl: upgradedAddress(item.siteUrl),
           icon: faviconFor(item.url),
           renamed: false,
-          folder: item.folder.trim(),
+          folder: (group ?? item.folder).trim(),
           lastFetched: 0,
           error: "",
           updatedAt: Date.now(),
@@ -781,8 +1082,20 @@ export class Reader {
     await this.forget(added.map((feed) => `${FEED_TOMBSTONE}${feed.id}`));
     this.sync.queue({ feeds: added });
     await this.trackFeeds();
-    this.refresh().catch(() => undefined);
-    return { found: items.length, added: added.length };
+    if (added.length > 0) {
+      // the loading screen holds the person until the new feeds' first check is in
+      this.importing += 1;
+      this.checkFeeds(added.map((feed) => feed.id))
+        .catch(() => undefined)
+        .finally(() => {
+          this.importing -= 1;
+        });
+    }
+    return {
+      found: listed.length,
+      added: added.length,
+      skipped: resolved.length - usable.length,
+    };
   }
 
   /** Search for feeds by what they are about; empty when nothing is found. */
@@ -793,36 +1106,50 @@ export class Reader {
       etag: "",
       lastModified: "",
     });
-    let hits: FeedHit[] = [];
+    let results: unknown[] = [];
     if (response?.type === "fetched" && response.status === 200) {
       try {
         const parsed: unknown = JSON.parse(response.text);
-        const results =
+        const listed =
           typeof parsed === "object" && parsed !== null && "results" in parsed
             ? parsed.results
             : [];
-        hits = (Array.isArray(results) ? results : [])
-          .filter(isHit)
-          .map((hit) => ({
-            // a feed's id is "feed/" and its address; other ids are not feeds
-            url: FEED_PREFIX.test(hit.feedId)
-              ? upgradedAddress(hit.feedId.replace(FEED_PREFIX, ""))
-              : "",
-            title: hit.title ?? hit.feedId,
-            description: hit.description ?? "",
-            icon: upgradedAddress(hit.iconUrl ?? ""),
-            subscribers: hit.subscribers ?? 0,
-          }))
-          .filter(
-            (hit, index, all) =>
-              isWebAddress(hit.url) &&
-              all.findIndex((other) => other.url === hit.url) === index,
-          );
+        results = Array.isArray(listed) ? listed : [];
       } catch {
-        hits = [];
+        results = [];
       }
     }
-    return hits;
+    const found = results.filter(isHit).map((hit) => ({
+      // a feed's id is "feed/" and its address; other ids are not feeds
+      url: FEED_PREFIX.test(hit.feedId)
+        ? webAddress(hit.feedId.replace(FEED_PREFIX, ""))
+        : "",
+      title: hit.title ?? hit.feedId,
+      description: hit.description ?? "",
+      icon: upgradedAddress(hit.iconUrl ?? ""),
+      subscribers: hit.subscribers ?? 0,
+      siteUrl: typeof hit.website === "string" ? hit.website : "",
+    }));
+    // a plain http result is shown at its https address only when that serves the same feed
+    const checked = await mapConcurrently(
+      found,
+      PROBE_CONCURRENCY,
+      async ({ siteUrl, ...hit }): Promise<FeedHit> => {
+        let { url } = hit;
+        if (isPlainHttp(url)) {
+          const { match } = await this.probe(
+            listedFeed(url, hit.title, siteUrl),
+          );
+          url = match?.url ?? "";
+        }
+        return { ...hit, url };
+      },
+    );
+    return checked.filter(
+      (hit, index, all) =>
+        isWebAddress(hit.url) &&
+        all.findIndex((other) => other.url === hit.url) === index,
+    );
   }
 
   /**
@@ -831,6 +1158,7 @@ export class Reader {
    */
   async refresh(feedIds: string[] = []): Promise<void> {
     if (this.extension.version) {
+      logFailure(this.upgradeHttpFeeds());
       this.refreshCount += 1;
       this.refreshing = true;
       // read articles kept in the list go as soon as a refresh is asked for
@@ -845,13 +1173,8 @@ export class Reader {
         ) {
           await this.close();
         }
-        const wanted =
-          feedIds.length > 0 ? feedIds : this.feeds.map((feed) => feed.id);
-        await this.extension.send({ type: "refresh", feedIds: wanted });
-        // a drain already running may have asked before this refresh's results were saved
-        await this.draining?.catch(() => undefined);
-        await this.drainExtension();
-        this.freezeOrder();
+        await this.checkFeeds(feedIds);
+        this.settle();
       } finally {
         const remaining = MIN_REFRESH_MS - (Date.now() - started);
         if (remaining > 0) {
@@ -860,6 +1183,18 @@ export class Reader {
         this.refreshCount -= 1;
         this.refreshing = this.refreshCount > 0;
       }
+    }
+  }
+
+  /** Have the extension check feeds now (every feed with no ids) and take in what it found, showing nothing while it does. */
+  private async checkFeeds(feedIds: string[]): Promise<void> {
+    if (this.extension.version) {
+      const wanted =
+        feedIds.length > 0 ? feedIds : this.feeds.map((feed) => feed.id);
+      await this.extension.send({ type: "refresh", feedIds: wanted });
+      // a drain already running may have asked before this refresh's results were saved
+      await this.draining?.catch(() => undefined);
+      await this.drainExtension();
     }
   }
 
@@ -919,9 +1254,9 @@ export class Reader {
     await this.changeSettings({ offTopics });
   }
 
-  /** How many articles in the current view have a word in the title or summary. */
+  /** How many articles in the current view have one of its words in the title or summary. */
   wordCount(word: string): number {
-    return this.baseEntries.filter((entry) => hasWord([word], entry)).length;
+    return this.wordCounts.get(word) ?? 0;
   }
 
   /** Turn the unread-only switch on or off, and remember it. */
@@ -929,6 +1264,10 @@ export class Reader {
     this.unreadOnly = next;
     this.pinned = {};
     this.heldTopics = {};
+    if (this.heldEntries !== undefined) {
+      this.settleList();
+      this.heldFeeds = new Set(this.feeds.map((feed) => feed.id));
+    }
     if (next && this.current?.read) {
       this.close().catch(() => undefined);
     }
@@ -937,6 +1276,12 @@ export class Reader {
     } catch {
       // storage can be blocked; the choice just does not persist
     }
+  }
+
+  /** Choose the reading font, and remember it. */
+  setReadingFont(next: ReadingFont): void {
+    this.readingFont = next;
+    storeReadingFont(next);
   }
 
   /** Show a feed, a group or one of the main lists, and remember the choice. */
@@ -949,6 +1294,9 @@ export class Reader {
       }
       this.pinned = {};
       this.heldTopics = {};
+      if (this.heldEntries !== undefined) {
+        this.settleList();
+      }
     }
     try {
       localStorage.setItem(VIEW_KEY, JSON.stringify(this.selection));
@@ -1264,8 +1612,13 @@ export class Reader {
     await this.trackFeeds();
   }
 
-  /** Store changes from the account; nothing here is sent back. */
+  /**
+   * Store changes from the account; nothing here is sent back. New articles
+   * and feeds wait for the lists to be settled, and an article read
+   * elsewhere stays listed until the view changes, as one read here does.
+   */
   private async applyRemote(change: RemoteChange): Promise<void> {
+    const arrived = this.holdLists();
     for (const [id, when] of change.removedFeeds) {
       // biome-ignore lint/performance/noAwaitInLoops: removals are rare and each touches several stores
       await this.dropFeed(id, when);
@@ -1283,6 +1636,16 @@ export class Reader {
       );
     }
     if (change.entries.length > 0) {
+      const shown = new Set(this.visible.map((entry) => entry.id));
+      const readElsewhere = change.entries.filter(
+        (entry) => entry.read && shown.has(entry.id),
+      );
+      if (readElsewhere.length > 0) {
+        this.pinned = {
+          ...this.pinned,
+          ...Object.fromEntries(readElsewhere.map((entry) => [entry.id, true])),
+        };
+      }
       const byId = new Map(change.entries.map((entry) => [entry.id, entry]));
       const known = new Set(this.entries.map((entry) => entry.id));
       this.entries = [
@@ -1304,7 +1667,9 @@ export class Reader {
       await this.remember(new Map([[`${SETTINGS_TOMBSTONE}${key}`, when]]));
     }
     await this.forget(forgotten);
+    arrived();
     if (change.feeds.length > 0) {
+      await this.markHttpFeeds();
       this.select(this.selection);
       await this.trackFeeds();
     }
@@ -1324,6 +1689,8 @@ export class Reader {
     this.tombstones = new Map();
     this.pinned = {};
     this.heldTopics = {};
+    this.heldEntries = undefined;
+    this.heldFeeds = undefined;
     this.select({ kind: "all" });
     this.freezeOrder();
     await this.trackFeeds();
@@ -1445,11 +1812,11 @@ export class Reader {
 
   private async discover(
     start: string,
-  ): Promise<{ url: string; parsed: ParsedFeed }> {
+  ): Promise<{ url: string; parsed: ParsedFeed; outcome: FetchOutcome }> {
     const queue = [start];
     const tried = new Set<string>();
     // what went wrong with the address as given; the usual feed paths tried after it mostly answer 404, which says less
-    let failure = "The site did not answer.";
+    let failure = copy.noAnswer;
     while (queue.length > 0 && tried.size < MAX_DISCOVERY_TRIES) {
       const url = queue.shift() ?? start;
       if (!tried.has(url)) {
@@ -1457,7 +1824,7 @@ export class Reader {
         // biome-ignore lint/performance/noAwaitInLoops: addresses are tried one at a time, best first
         const attempt = await this.tryAddress(url);
         if (attempt.parsed) {
-          return { url, parsed: attempt.parsed };
+          return { url, parsed: attempt.parsed, outcome: attempt.outcome };
         }
         if (tried.size === 1) {
           failure = attempt.failure || failure;
@@ -1478,6 +1845,7 @@ export class Reader {
     failure: string;
     html: string;
     base: string;
+    outcome: FetchOutcome;
   }> {
     const response = await this.extension.send({
       type: "fetch",
@@ -1488,7 +1856,7 @@ export class Reader {
     if (response?.type === "error") {
       throw new Error(response.message);
     } else if (response?.type !== "fetched") {
-      throw new Error("The Reader extension is not installed.");
+      throw new Error(copy.extensionMissing);
     }
     // extensions before redirects were reported send no address
     const base = upgradedAddress(response.url) || url;
@@ -1498,19 +1866,175 @@ export class Reader {
       try {
         parsed = parseFeed(response.text, base);
       } catch {
-        failure = "That address is not a feed and does not point to one.";
+        failure = copy.notFeed;
       }
     } else if (response.insecure === true) {
-      failure = "The feed is not on https.";
+      failure = copy.notHttps;
     } else if (response.status !== 0) {
       failure = statusProblem(response.status);
     }
+    const { type: _type, ...outcome } = response;
     return {
       parsed,
       failure,
       html: response.status === 200 ? response.text : "",
       base,
+      outcome,
     };
+  }
+
+  /** A followed feed with this id or one of these addresses. */
+  private followed(id: string, urls: string[]): Feed | undefined {
+    return this.feeds.find((feed) => feed.id === id || urls.includes(feed.url));
+  }
+
+  /**
+   * Try a plain http feed at its https address through the extension; also
+   * whether the answer settles the question, so a failure that is not is tried
+   * again later.
+   */
+  private async probe(known: KnownFeed): Promise<{
+    match: HttpsMatch<FetchOutcome> | undefined;
+    settled: boolean;
+  }> {
+    let answer: FetchOutcome | undefined;
+    const match = await probeHttps(known, async (url) => {
+      const response = await this.extension.send({
+        type: "fetch",
+        url,
+        etag: "",
+        lastModified: "",
+      });
+      if (response?.type === "fetched") {
+        const { type: _type, ...outcome } = response;
+        answer = outcome;
+      }
+      return answer;
+    });
+    return {
+      match,
+      // an address that may not be tried never will be, so there is nothing to wait for
+      settled:
+        match !== undefined ||
+        !probeAllowed(known.url) ||
+        settledAnswer(answer),
+    };
+  }
+
+  /** What is known of a followed feed to tell it from another; a name the person gave is not the feed's own. */
+  private knownOf(feed: Feed): KnownFeed {
+    const held = this.entries.filter((entry) => entry.feedId === feed.id);
+    return {
+      url: feed.url,
+      title: feed.renamed ? "" : feed.title,
+      siteUrl: feed.siteUrl,
+      guids: held.map((entry) => entry.guid),
+      links: held.map((entry) => entry.url),
+    };
+  }
+
+  /**
+   * Give every plain http feed the http problem, and clear it from any feed
+   * no longer on http. The problem stays on this device, like the others.
+   */
+  private async markHttpFeeds(): Promise<void> {
+    const changed: Feed[] = [];
+    for (const feed of this.feeds) {
+      let { error } = feed;
+      if (isPlainHttp(feed.url)) {
+        error = copy.httpFeed;
+      } else if (feed.error === copy.httpFeed) {
+        error = "";
+      }
+      if (error !== feed.error) {
+        feed.error = error;
+        changed.push(feed);
+      }
+    }
+    await Promise.all(
+      changed.map((feed) => this.db?.putFeed($state.snapshot(feed))),
+    );
+  }
+
+  /**
+   * Try each plain http feed, once while the app is open, at its https
+   * address; one whose try got no definite answer (offline, a timeout, a
+   * failing server) is tried again on the next refresh, up to
+   * `UNSETTLED_TRIES` tries. One that serves the same feed moves there (see
+   * `moveToHttps`). One that does not, or whose https address is already
+   * followed, keeps the http problem.
+   */
+  private async upgradeHttpFeeds(): Promise<void> {
+    const waiting = this.feeds.filter(
+      (feed) => isPlainHttp(feed.url) && !this.httpTried.has(feed.id),
+    );
+    for (const feed of waiting) {
+      this.httpTried.add(feed.id);
+    }
+    const probes = await mapConcurrently(
+      waiting,
+      PROBE_CONCURRENCY,
+      async (feed) => {
+        const { match, settled } = await this.probe(this.knownOf(feed));
+        const misses = (this.httpMisses.get(feed.id) ?? 0) + (settled ? 0 : 1);
+        this.httpMisses.set(feed.id, misses);
+        if (!settled && misses < UNSETTLED_TRIES) {
+          this.httpTried.delete(feed.id);
+        }
+        return { id: feed.id, from: feed.url, match };
+      },
+    );
+    await this.moveToHttps(probes);
+  }
+
+  /**
+   * Move plain http feeds to the https addresses found to serve them: same
+   * id, articles, marks and group, with the new address saved and sent like a
+   * person's change, so other devices move too, and the answer taken as the
+   * first check. A feed whose address changed meanwhile, or whose https
+   * address is already followed, stays.
+   */
+  private async moveToHttps(
+    candidates: {
+      id: string;
+      from: string;
+      match: HttpsMatch<FetchOutcome> | undefined;
+    }[],
+  ): Promise<void> {
+    const found = await Promise.all(
+      candidates.map(async (candidate) => ({
+        ...candidate,
+        secureId: candidate.match ? await feedId(candidate.match.url) : "",
+      })),
+    );
+    const moved: { feed: Feed; match: HttpsMatch<FetchOutcome> }[] = [];
+    const now = Date.now();
+    for (const { id, from, match, secureId } of found) {
+      const feed = this.feeds.find((candidate) => candidate.id === id);
+      const taken =
+        match !== undefined &&
+        this.feeds.some(
+          (other) =>
+            other.id !== id &&
+            (other.id === secureId || other.url === match.url),
+        );
+      if (feed && match && feed.url === from && !taken) {
+        feed.url = match.url;
+        feed.error = "";
+        feed.lastFetched = now;
+        moved.push({ feed, match });
+      }
+    }
+    if (moved.length > 0) {
+      await this.saveFeeds(moved.map(({ feed }) => feed));
+      for (const { feed, match } of moved) {
+        // biome-ignore lint/performance/noAwaitInLoops: one feed at a time so no entry is added twice
+        await this.ingest(feed, match.feed);
+      }
+      await this.trackFeeds(
+        new Map(moved.map(({ feed, match }) => [feed.id, match.outcome])),
+      );
+    }
   }
 
   private async leave(entry: Entry): Promise<void> {
@@ -1568,7 +2092,9 @@ export class Reader {
       (entry) => subscribed.has(entry.feedId) && !present.has(entry.id),
     );
     if (added.length > 0) {
+      const arrived = this.holdLists();
       this.entries = [...this.entries, ...added];
+      arrived();
       try {
         await this.saveNew(added, found.bodies);
       } catch (error) {
@@ -1647,6 +2173,7 @@ export class Reader {
       }
       await this.commitEntries(found);
       await this.applyStatus(response.status);
+      this.extensionChecking = response.checking === true;
       await this.extension.send({ type: "ack", upTo: response.seq });
       // extensions before paged drains send no flag
       more = response.more === true && response.seq > 0;
@@ -1683,12 +2210,15 @@ export class Reader {
 
   private async applyStatus(statuses: FeedStatus[]): Promise<void> {
     const changed: Feed[] = [];
+    const byId = new Map(this.feeds.map((feed) => [feed.id, feed]));
+    const nextChecks: number[] = [];
     for (const status of statuses) {
-      const feed = this.feeds.find(
-        (candidate) => candidate.id === status.feedId,
-      );
+      const feed = byId.get(status.feedId);
+      if (feed !== undefined && status.nextCheck !== undefined) {
+        nextChecks.push(status.nextCheck);
+      }
       if (
-        feed &&
+        feed !== undefined &&
         (feed.lastFetched !== status.lastChecked || feed.error !== status.error)
       ) {
         feed.lastFetched = status.lastChecked;
@@ -1696,20 +2226,48 @@ export class Reader {
         changed.push(feed);
       }
     }
+    this.watchOverdue(overdueAt(nextChecks));
     await Promise.all(
       changed.map((feed) => this.db?.putFeed($state.snapshot(feed))),
     );
   }
 
-  private async trackFeeds(): Promise<void> {
+  /** Set `overdue` from whether `when` has passed, and again once it does; one timer however many feeds. */
+  private watchOverdue(when: number): void {
+    clearTimeout(this.overdueTimer);
+    this.overdueTimer = undefined;
+    const wait = when - Date.now();
+    this.overdue = wait <= 0;
+    if (wait > 0 && Number.isFinite(wait)) {
+      this.overdueTimer = setTimeout(
+        () => this.watchOverdue(when),
+        Math.min(wait, MAX_TIMER_MS),
+      );
+    }
+  }
+
+  /**
+   * Hand the extension the feeds to check, with any answers already taken in
+   * (`firstChecks`, by id) as their first checks, split over as many messages
+   * as those answers need (see `trackMessages`).
+   */
+  private async trackFeeds(
+    firstChecks = new Map<string, FetchOutcome>(),
+  ): Promise<void> {
     if (this.extension.version) {
       const withEntries = new Set(this.entries.map((entry) => entry.feedId));
-      const feeds: TrackedFeed[] = this.feeds.map((feed) => ({
-        id: feed.id,
-        url: feed.url,
-        empty: !withEntries.has(feed.id),
-      }));
-      await this.extension.send({ type: "track", feeds });
+      // a plain http feed is never fetched; its https address is tried apart from the schedule
+      const feeds: TrackedFeed[] = this.feeds
+        .filter((feed) => !isPlainHttp(feed.url))
+        .map((feed) => ({
+          id: feed.id,
+          url: feed.url,
+          empty: !withEntries.has(feed.id),
+        }));
+      for (const message of trackMessages(feeds, firstChecks)) {
+        // biome-ignore lint/performance/noAwaitInLoops: each message replaces the list the last one sent, so they go in order
+        await this.extension.send({ type: "track", feeds: message });
+      }
     }
   }
 }

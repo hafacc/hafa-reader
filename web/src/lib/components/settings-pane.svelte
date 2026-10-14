@@ -3,20 +3,25 @@
   import X from "@lucide/svelte/icons/x";
   import { copy } from "#lib/copy.ts";
   import { logFailure, type Reader } from "#lib/reader.svelte.ts";
+  import { byCount } from "$shared/filter.ts";
+  import ChipRows from "./chip-rows.svelte";
+  import ConfirmButton from "./confirm-button.svelte";
   import PhoneBar from "./phone-bar.svelte";
   import Segmented from "./segmented.svelte";
+  import TextField from "./text-field.svelte";
+  import TopicChip from "./topic-chip.svelte";
 
   const { reader, onback }: { reader: Reader; onback: () => void } = $props();
 
-  const CONFIRM_MS = 4000;
-
   let mode = $state<"hide" | "only">("hide");
   let draft = $state("");
-  let confirming = $state(false);
 
   const settings = $derived(reader.viewSettings);
   const words = $derived(
     mode === "hide" ? settings.hideWords : settings.onlyWords,
+  );
+  const orderedWords = $derived(
+    byCount(words, (word) => reader.wordCount(word)),
   );
   const feed = $derived.by(() => {
     const { selection } = reader;
@@ -28,7 +33,6 @@
     reader.selection.kind === "folder" ? reader.selection.name : "",
   );
   const renamable = $derived(feed !== undefined || folder !== "");
-
   function setMode(next: "hide" | "only"): void {
     mode = next;
   }
@@ -85,19 +89,12 @@
   }
 
   function remove(): void {
-    if (confirming) {
-      if (feed) {
-        logFailure(reader.removeFeed(feed.id));
-      } else if (folder !== "") {
-        logFailure(reader.deleteFolder(folder));
-      }
-      onback();
-    } else {
-      confirming = true;
-      setTimeout(() => {
-        confirming = false;
-      }, CONFIRM_MS);
+    if (feed) {
+      logFailure(reader.removeFeed(feed.id));
+    } else if (folder !== "") {
+      logFailure(reader.deleteFolder(folder));
     }
+    onback();
   }
 </script>
 
@@ -112,7 +109,7 @@
           <span class="hidden font-mono text-xs text-muted md:block"
             >{copy.settings}</span
           >
-          <h1 class="truncate font-serif text-3xl font-bold leading-tight">
+          <h1 class="truncate font-reading text-3xl font-bold leading-tight">
             {reader.viewTitle}
           </h1>
         </div>
@@ -131,21 +128,18 @@
       {/if}
 
       {#if renamable}
-        <label class="flex flex-col gap-2" for="view-name">
-          <span class="font-medium">{copy.nameLabel}</span>
-          <input
-            id="view-name"
-            class="rounded-lg border border-line bg-panel px-3 py-2"
-            value={reader.viewTitle}
-            onchange={rename}
-            autocomplete="off"
-          >
-        </label>
+        <TextField
+          id="view-name"
+          label={copy.nameLabel}
+          value={reader.viewTitle}
+          onchange={rename}
+        />
       {/if}
 
       <div class="flex flex-col gap-2">
         <span class="font-medium">{copy.sortLabel}</span>
         <Segmented
+          label={copy.sortLabel}
           options={[
             { value: "newest", label: copy.newest },
             { value: "oldest", label: copy.oldest },
@@ -155,10 +149,25 @@
         />
       </div>
 
+      <div class="flex flex-col gap-2">
+        <span class="font-medium">{copy.readingFontLabel}</span>
+        <Segmented
+          label={copy.readingFontLabel}
+          options={[
+            { value: "literata", label: copy.fontLiterata },
+            { value: "public-sans", label: copy.fontPublicSans },
+          ]}
+          value={reader.readingFont}
+          onchange={(font) => reader.setReadingFont(font)}
+        />
+        <p class="text-xs text-muted">{copy.readingFontHint}</p>
+      </div>
+
       {#if reader.filtersApply}
         <div class="flex flex-col gap-3">
           <span class="font-medium">{copy.rulesLabel}</span>
           <Segmented
+            label={copy.rulesLabel}
             options={[
               { value: "hide", label: copy.actionHide },
               { value: "only", label: copy.actionOnly },
@@ -174,27 +183,36 @@
             onkeydown={onWordKeydown}
             autocomplete="off"
           >
-          {#if words.length > 0}
-            <div class="flex flex-wrap gap-2">
-              {#each words as word (word)}
-                <span
-                  class="flex items-center gap-1.5 rounded-full border border-line py-1 pl-3 pr-1.5"
-                >
-                  {word}
-                  <span class="font-mono text-xs tabular-nums text-muted"
-                    >{reader.wordCount(word)}</span
+          {#if orderedWords.length > 0}
+            <ChipRows items={orderedWords} key={(word) => word}>
+              {#snippet chip(
+                word: string,
+              )}
+                <!-- on a phone the remove button takes taps 44 pixels across around its small circle -->
+                <span class="flex min-h-11 items-center md:min-h-0">
+                  <span
+                    class="flex h-8 items-center gap-1.5 whitespace-nowrap rounded-full border border-line pl-3 text-sm md:pr-1"
                   >
-                  <button
-                    type="button"
-                    class="grid size-6 place-items-center rounded-full text-muted hover:bg-side"
-                    aria-label={copy.removeRule}
-                    onclick={() => removeWord(word)}
-                  >
-                    <X class="size-3.5" />
-                  </button>
+                    {word}
+                    <span class="font-mono text-xs tabular-nums text-muted"
+                      >{reader.wordCount(word)}</span
+                    >
+                    <button
+                      type="button"
+                      class="group -my-1.5 grid size-11 place-items-center rounded-full text-muted md:my-0 md:size-6"
+                      aria-label={copy.removeWord(word)}
+                      onclick={() => removeWord(word)}
+                    >
+                      <span
+                        class="grid size-6 place-items-center rounded-full group-hover:bg-side"
+                      >
+                        <X class="size-3.5" />
+                      </span>
+                    </button>
+                  </span>
                 </span>
-              {/each}
-            </div>
+              {/snippet}
+            </ChipRows>
           {/if}
           <p class="text-xs text-muted">{copy.filterHint}</p>
         </div>
@@ -202,26 +220,23 @@
         {#if reader.topics.length > 0}
           <div class="flex flex-col gap-3">
             <span class="font-medium">{copy.topics}</span>
-            <div class="flex flex-wrap gap-2">
-              {#each reader.topics as item (item.topic.toLowerCase())}
-                <button
-                  type="button"
-                  aria-pressed={!reader.topicOff(item.topic)}
-                  class="flex items-center gap-1.5 rounded-full border border-line px-3 py-1 {reader.topicOff(
-                    item.topic,
-                  )
-                    ? "text-faded line-through"
-                    : ""}"
-                  onclick={() =>
+            <ChipRows
+              items={reader.topics}
+              key={(item) => item.topic.trim().toLowerCase()}
+            >
+              {#snippet chip(item: {
+                topic: string;
+                count: number;
+              })}
+                <TopicChip
+                  topic={item.topic}
+                  count={item.count}
+                  off={reader.topicOff(item.topic)}
+                  ontoggle={() =>
                     logFailure(reader.toggleTopic(item.topic, false))}
-                >
-                  {item.topic}
-                  <span class="font-mono text-xs tabular-nums text-muted"
-                    >{item.count}</span
-                  >
-                </button>
-              {/each}
-            </div>
+                />
+              {/snippet}
+            </ChipRows>
             <p class="text-xs text-muted">{copy.topicsHint}</p>
           </div>
         {/if}
@@ -229,46 +244,29 @@
 
       {#if feed}
         <div class="flex flex-col gap-3 border-t border-line pt-8">
-          <label class="flex flex-col gap-2" for="feed-group">
-            <span class="font-medium">{copy.groupLabel}</span>
-            <input
-              id="feed-group"
-              class="rounded-lg border border-line bg-panel px-3 py-2"
-              list="group-names"
-              placeholder={copy.noGroup}
-              value={feed.folder}
-              onchange={changeGroup}
-              autocomplete="off"
-            >
-            <datalist id="group-names">
-              {#each reader.folders as name (name)}
-                <option value={name}></option>
-              {/each}
-            </datalist>
-          </label>
+          <TextField
+            id="feed-group"
+            label={copy.groupLabel}
+            placeholder={copy.noGroup}
+            suggestions={reader.folders}
+            value={feed.folder}
+            onchange={changeGroup}
+          />
           <p class="text-xs text-muted">{copy.groupHint}</p>
-          <button
-            type="button"
-            class="self-start rounded-lg border px-3 py-2 {confirming
-              ? "border-star text-star"
-              : "border-line"}"
-            onclick={remove}
-          >
-            {confirming ? copy.confirmUnsubscribe : copy.unsubscribe}
-          </button>
+          <ConfirmButton
+            label={copy.unsubscribe}
+            confirmLabel={copy.confirmUnsubscribe}
+            onconfirm={remove}
+          />
         </div>
       {:else if folder !== ""}
         <div class="flex flex-col gap-3 border-t border-line pt-8">
           <p class="text-xs text-muted">{copy.deleteGroupHint}</p>
-          <button
-            type="button"
-            class="self-start rounded-lg border px-3 py-2 {confirming
-              ? "border-star text-star"
-              : "border-line"}"
-            onclick={remove}
-          >
-            {confirming ? copy.confirmDeleteGroup : copy.deleteGroup}
-          </button>
+          <ConfirmButton
+            label={copy.deleteGroup}
+            confirmLabel={copy.confirmDeleteGroup}
+            onconfirm={remove}
+          />
         </div>
       {/if}
     </div>

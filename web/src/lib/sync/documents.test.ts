@@ -143,7 +143,7 @@ describe("settings", () => {
 });
 
 describe("https only", () => {
-  test("account feeds and entries have plain http upgraded", () => {
+  test("account feeds keep a plain http address; their other addresses and entries are upgraded", () => {
     const feed = parseSubscription({
       ...subscriptionDocument(
         sampleFeed({
@@ -153,7 +153,7 @@ describe("https only", () => {
         }),
       ),
     });
-    expect(feed?.url).toBe("https://old.example/rss");
+    expect(feed?.url).toBe("http://old.example/rss");
     expect(feed?.siteUrl).toBe("https://old.example/");
     expect(feed?.icon).toBe("https://old.example/icon.png");
     const entry = parseEntry({

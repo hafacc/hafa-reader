@@ -4,6 +4,8 @@ import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.launch
 import cc.hafa.reader.core.sync.RemoteChange
+import cc.hafa.reader.core.sync.SyncReport
+import cc.hafa.reader.core.sync.SyncStatus
 import kotlinx.coroutines.test.StandardTestDispatcher
 import kotlinx.coroutines.test.TestScope
 import kotlinx.coroutines.test.runCurrent
@@ -48,6 +50,83 @@ class ReaderModelTest {
     }
 
     private fun ReaderModel.titles(): List<String> = view().visible.map { entry -> entry.title }
+
+    private fun article(id: String, feedId: String, published: Long, read: Boolean = false): Entry =
+        Entry(id, feedId, id, "Story $id", "", published, true, "", "", "", "", emptyList(), read, false, published)
+
+    @Test
+    fun `articles arriving in the background wait until the list is next settled`() = runTest {
+        val model = model()
+        model.addWithItems("https://a.example/feed", "one")
+        val feed = model.state.value.feeds.single()
+        model.select(Selection.All)
+        model.settle()
+        model.syncHost.apply(RemoteChange(entries = listOf(article("later", feed.id, now))))
+        assertEquals(listOf("one"), model.titles())
+        assertEquals(2, model.view().unreadTotal)
+        model.select(Selection.Starred)
+        model.select(Selection.All)
+        assertEquals(listOf("Story later", "one"), model.titles())
+    }
+
+    @Test
+    fun `an empty list takes in what arrives, since no row can move`() = runTest {
+        val model = model()
+        model.addWithItems("https://a.example/feed", "one")
+        val feed = model.state.value.feeds.single()
+        model.select(Selection.Starred)
+        model.settle()
+        model.syncHost.apply(RemoteChange(entries = listOf(article("star", feed.id, now).copy(starred = true))))
+        assertEquals(listOf("Story star"), model.titles())
+    }
+
+    @Test
+    fun `an article read elsewhere stays listed until the view changes`() = runTest {
+        val model = model()
+        model.addWithItems("https://a.example/feed", "one")
+        model.select(Selection.All)
+        model.settle()
+        val entry = model.state.value.entries.single()
+        model.syncHost.apply(RemoteChange(entries = listOf(entry.copy(read = true, updatedAt = now))))
+        assertEquals(listOf("one"), model.titles())
+        model.select(Selection.Starred)
+        model.select(Selection.All)
+        assertEquals(emptyList(), model.titles())
+    }
+
+    @Test
+    fun `a feed with nothing unread stays out of the sidebar when articles arrive`() = runTest {
+        val model = model()
+        model.addWithItems("https://a.example/feed", "one")
+        model.addWithItems("https://b.example/feed", "two")
+        val (first, second) = model.state.value.feeds
+        model.select(Selection.All)
+        model.toggleReadFor(model.state.value.entries.first { entry -> entry.feedId == second.id }.id)
+        model.settle()
+        fun listedIds() = sidebarRows(model.state.value, model.view()).mapNotNull { row -> row.feed?.id }
+        assertEquals(listOf(first.id), listedIds())
+        model.syncHost.apply(RemoteChange(entries = listOf(article("later", second.id, now))))
+        assertEquals(listOf(first.id), listedIds())
+        model.settle()
+        assertEquals(setOf(first.id, second.id), listedIds().toSet())
+    }
+
+    @Test
+    fun `an import holds the loading screen until its feeds' first check`() = runTest {
+        val model = model()
+        val gate = CompletableDeferred<Unit>()
+        fetcher.answers["https://x.example/rss"] = FetchOutcome(status = 200, text = rss("X", "one"))
+        fetcher.gates["https://x.example/rss"] = gate
+        model.importOpml("""<opml><body><outline xmlUrl="https://x.example/rss"/></body></opml>""")
+        assertEquals(1, model.state.value.importing)
+        assertTrue(loadingBusy(model.state.value, SyncReport(SyncStatus.Off), awaited = true))
+        assertEquals(0, model.state.value.refreshCount)
+        gate.complete(Unit)
+        model.awaitChecks()
+        runCurrent()
+        assertEquals(0, model.state.value.importing)
+        assertFalse(loadingBusy(model.state.value, SyncReport(SyncStatus.Off), awaited = true))
+    }
 
     @Test
     fun `a refresh cancelled during its shortest showing still ends its mark`() = runTest {
@@ -504,6 +583,40 @@ class ReaderModelTest {
     }
 
     @Test
+    fun `opening checks only due feeds in the background without showing a refresh`() = runTest {
+        val first = model()
+        first.addWithItems("https://a.example/feed", "one")
+        now += MAX_INTERVAL_MS
+        first.addWithItems("https://b.example/feed", "two")
+        first.awaitWrites()
+        fetcher.requests.clear()
+        val gate = CompletableDeferred<Unit>()
+        fetcher.gates["https://a.example/feed"] = gate
+        var backgroundCalls = 0
+        val model = ReaderModel(
+            store,
+            preferences,
+            fetcher,
+            backgroundScope,
+            clock = { now },
+            workDispatcher = StandardTestDispatcher(testScheduler),
+            minRefreshMillis = 0,
+            onBackgroundWork = { backgroundCalls += 1 },
+        )
+        model.openChecks()
+        runCurrent()
+        assertTrue(model.state.value.loaded)
+        assertFalse(model.state.value.refreshing)
+        assertEquals(1, backgroundCalls)
+        assertEquals(listOf("https://a.example/feed"), fetcher.requests)
+        val rank = model.state.value.frozenRank
+        gate.complete(Unit)
+        model.awaitChecks()
+        assertEquals(listOf("https://a.example/feed"), fetcher.requests)
+        assertTrue(rank === model.state.value.frozenRank)
+    }
+
+    @Test
     fun `the sidebar order holds until the next refresh`() = runTest {
         val model = model()
         model.addWithItems("https://a.example/feed", "one")
@@ -566,14 +679,196 @@ class ReaderModelTest {
     }
 
     @Test
-    fun `only web addresses can be added, and http is fetched as https`() = runTest {
+    fun `only https addresses can be added, and a typed http one is refused without a fetch`() = runTest {
         val model = model()
         val refused = assertFailsWith<FeedProblemException> { model.addFeed("ftp://files.example/feed") }
         assertEquals(FeedProblem.NotWebAddress, refused.problem)
         fetcher.answers["https://plain.example/feed"] = FetchOutcome(status = 200, text = rss("P", "one"))
-        model.addFeed("http://plain.example/feed")
-        assertEquals("https://plain.example/feed", model.state.value.feeds.single().url)
+        val plain = assertFailsWith<FeedProblemException> { model.addFeed("http://plain.example/feed") }
+        assertEquals(FeedProblem.HttpRefused, plain.problem)
+        assertEquals(emptyList(), model.state.value.feeds)
+        assertEquals(emptyList(), fetcher.requests)
+    }
+
+    @Test
+    fun `an import moves http feeds to https when it serves them, counts the rest, and uses the chosen group`() = runTest {
+        val model = model()
+        fetcher.answers["https://good.example/rss"] = FetchOutcome(status = 200, text = rss("Good", "one"))
+        val result = model.importOpml(
+            """<opml><body><outline title="Theirs">
+               <outline title="Good" xmlUrl="http://good.example/rss" htmlUrl="http://site.example/"/>
+               <outline title="Gone" xmlUrl="http://gone.example/rss"/>
+               <outline title="Safe" xmlUrl="https://safe.example/rss"/></outline></body></opml>""",
+            group = "News",
+        )
+        assertEquals(ImportResult(found = 3, added = 2, skipped = 1), result)
+        assertEquals(
+            listOf("https://good.example/rss" to "News", "https://safe.example/rss" to "News"),
+            model.state.value.feeds.map { feed -> feed.url to feed.folder },
+        )
+        val loose = model.importOpml("""<opml><body><outline title="X"><outline xmlUrl="https://x.example/rss"/></outline></body></opml>""", group = "")
+        assertEquals(1, loose.added)
+        assertEquals("", model.state.value.feeds.last().folder)
+    }
+
+    @Test
+    fun `an import leaves alone an http feed already followed`() = runTest {
+        val model = model()
+        val old = Feed(feedId("http://blog.example/rss"), "http://blog.example/rss", "Blog", "", "", false, "", "")
+        model.syncHost.apply(RemoteChange(feeds = listOf(old)))
+        val result = model.importOpml("""<opml><body><outline xmlUrl="http://blog.example/rss"/></body></opml>""")
+        assertEquals(ImportResult(found = 1, added = 0, skipped = 0), result)
+        assertTrue(fetcher.requests.none { url -> url.contains("blog.example") })
+    }
+
+    @Test
+    fun `search results on http show at https when it serves the same feed, else are dropped`() = runTest {
+        val model = model()
+        fetcher.answers[feedSearchAddress("good")] = FetchOutcome(
+            status = 200,
+            text = """{"results":[{"feedId":"feed/http://good.example/rss","title":"Good"},
+                {"feedId":"feed/http://parked.example/rss","title":"Parked"},
+                {"feedId":"feed/http://gone.example/rss","title":"Gone"}]}""",
+        )
+        fetcher.answers["https://good.example/rss"] = FetchOutcome(status = 200, text = rss("Good", "one"))
+        fetcher.answers["https://parked.example/rss"] =
+            FetchOutcome(status = 200, text = "<rss><channel><title>Welcome</title><link>https://hosting.example/</link></channel></rss>")
+        assertEquals(listOf("https://good.example/rss"), model.searchFeeds("good").map { hit -> hit.url })
+    }
+
+    @Test
+    fun `a followed http feed moves to https once, keeping its id, articles and group, and is checked from the answer`() = runTest {
+        val model = model()
+        val oldId = feedId("http://blog.example/rss")
+        val old = Feed(oldId, "http://blog.example/rss", "Renamed", "", "", true, "News", "", updatedAt = 1)
+        val dead = Feed(feedId("http://dead.example/rss"), "http://dead.example/rss", "Dead", "", "", false, "", "")
+        val starred = Entry(
+            entryId(oldId, "one"), oldId, "one", "one", "", 0, true, "", "", "", "", emptyList(),
+            read = true, starred = true, addedAt = 1, updatedAt = 1,
+        )
+        model.syncHost.apply(RemoteChange(feeds = listOf(old, dead), entries = listOf(starred)))
+        assertEquals(FeedProblem.HttpFeed.code, model.state.value.feeds.first { feed -> feed.id == oldId }.error)
+        fetcher.answers["https://blog.example/rss"] = FetchOutcome(status = 200, text = rss("Blog", "one", "two"))
+        fetcher.answers["https://dead.example/rss"] = FetchOutcome(status = 404)
+        model.refresh()
+        runCurrent()
+        model.awaitChecks()
+        model.awaitWrites()
+        val moved = model.state.value.feeds.first { feed -> feed.id == oldId }
+        assertEquals("https://blog.example/rss", moved.url)
+        assertEquals("News", moved.folder)
+        assertEquals("", moved.error)
+        assertTrue(moved.updatedAt > 1)
+        assertEquals(
+            listOf("one" to true, "two" to false),
+            model.state.value.entries.filter { entry -> entry.feedId == oldId }.map { entry -> entry.guid to entry.starred },
+        )
+        assertEquals(FeedProblem.HttpFeed.code, model.state.value.feeds.first { feed -> feed.id == dead.id }.error)
+        model.refresh()
+        runCurrent()
+        assertEquals(1, fetcher.requests.count { url -> url == "https://dead.example/rss" })
         assertTrue(fetcher.requests.none { url -> url.startsWith("http://") })
+    }
+
+    /** Follow [feeds] as if they came from the account, then refresh and let the https tries finish. */
+    private suspend fun TestScope.followAndRefresh(model: ReaderModel, vararg feeds: Feed) {
+        model.syncHost.apply(RemoteChange(feeds = feeds.toList()))
+        model.refresh()
+        runCurrent()
+        model.awaitChecks()
+        model.awaitWrites()
+    }
+
+    private fun plainFeed(url: String, title: String = "Blog", renamed: Boolean = false): Feed =
+        Feed(feedId(url), url, title, "", "", renamed, "", "")
+
+    @Test
+    fun `an http feed whose https address is already followed stays as it is`() = runTest {
+        val model = model()
+        fetcher.answers["https://blog.example/rss"] = FetchOutcome(status = 200, text = rss("Blog", "one"))
+        followAndRefresh(model, plainFeed("http://blog.example/rss"), plainFeed("https://blog.example/rss"))
+        assertEquals(
+            listOf("http://blog.example/rss", "https://blog.example/rss"),
+            model.state.value.feeds.map { feed -> feed.url },
+        )
+    }
+
+    @Test
+    fun `an http feed that got no definite answer is tried again on the next refresh`() = runTest {
+        val model = model()
+        fetcher.answers["https://busy.example/rss"] = FetchOutcome(status = 503)
+        followAndRefresh(model, plainFeed("http://busy.example/rss"), plainFeed("http://offline.example/rss"))
+        model.refresh()
+        runCurrent()
+        model.awaitChecks()
+        assertEquals(2, fetcher.requests.count { url -> url == "https://busy.example/rss" })
+        assertEquals(2, fetcher.requests.count { url -> url == "https://offline.example/rss" })
+        assertTrue(model.state.value.feeds.all { feed -> isPlainHttp(feed.url) })
+    }
+
+    @Test
+    fun `a feed's https address is matched by its own name, not one the person gave it`() = runTest {
+        val model = model()
+        fetcher.answers["https://feeds.host.example/a"] =
+            FetchOutcome(status = 200, text = "<rss><channel><title>Parked</title><link>https://parking.example/</link></channel></rss>")
+        followAndRefresh(model, plainFeed("http://feeds.host.example/a", title = "Parked", renamed = true))
+        assertEquals("http://feeds.host.example/a", model.state.value.feeds.single().url)
+    }
+
+    @Test
+    fun `adding the https address of a feed followed over http moves that feed`() = runTest {
+        val model = model()
+        val old = plainFeed("http://blog.example/rss")
+        model.syncHost.apply(RemoteChange(feeds = listOf(old)))
+        fetcher.answers["https://blog.example/rss"] = FetchOutcome(status = 200, text = rss("Blog", "one"))
+        model.addFeed("https://blog.example/rss")
+        model.awaitWrites()
+        val moved = model.state.value.feeds.single()
+        assertEquals(old.id to "https://blog.example/rss", moved.id to moved.url)
+        assertEquals(now, moved.schedule.lastChecked)
+        assertEquals(Selection.FeedView(old.id), model.state.value.selection)
+    }
+
+    @Test
+    fun `adding the https address of a different feed followed over http adds it beside the one followed`() = runTest {
+        val model = model()
+        val old = plainFeed("http://blog.example/rss")
+        model.syncHost.apply(RemoteChange(feeds = listOf(old)))
+        fetcher.answers["https://blog.example/rss"] =
+            FetchOutcome(status = 200, text = "<rss><channel><title>Parked</title><link>https://parking.example/</link></channel></rss>")
+        val id = feedId("https://blog.example/rss")
+        model.addFeed("https://blog.example/rss")
+        assertEquals(
+            listOf(old.id to "http://blog.example/rss", id to "https://blog.example/rss"),
+            model.state.value.feeds.map { feed -> feed.id to feed.url },
+        )
+        assertEquals(Selection.FeedView(id), model.state.value.selection)
+        model.addFeed("https://blog.example/rss")
+        assertEquals(2, model.state.value.feeds.size)
+        assertEquals(Selection.FeedView(id), model.state.value.selection)
+        model.awaitWrites()
+    }
+
+    @Test
+    fun `an http feed with no definite answer is tried a few times a run, then left`() = runTest {
+        val model = model()
+        followAndRefresh(model, plainFeed("http://offline.example/rss"))
+        repeat(UNSETTLED_TRIES + 1) {
+            model.refresh()
+            runCurrent()
+            model.awaitChecks()
+        }
+        assertEquals(UNSETTLED_TRIES, fetcher.requests.count { url -> url == "https://offline.example/rss" })
+    }
+
+    @Test
+    fun `an http feed on a private host is never tried over https`() = runTest {
+        val model = model()
+        followAndRefresh(model, plainFeed("http://192.168.1.1/rss"), plainFeed("http://nas.local/rss"))
+        model.refresh()
+        runCurrent()
+        model.awaitChecks()
+        assertTrue(fetcher.requests.none { url -> "192.168.1.1" in url || "nas.local" in url })
     }
 
     @Test
@@ -701,7 +996,7 @@ class ReaderModelTest {
         val items = (1..30).joinToString("") { index -> "<item><title>t$index</title><guid>$index</guid><category>topic $index</category></item>" }
         fetcher.answers["https://many.example/feed"] = FetchOutcome(status = 200, text = "<rss><channel><title>M</title>$items</channel></rss>")
         model.addFeed("https://many.example/feed")
-        assertEquals(30, model.view().topics.size)
+        assertEquals(30, model.view().topicOrder.counts.size)
     }
 
     @Test

@@ -126,22 +126,93 @@ function matchesEntry(matcher: Matcher, entry: FilterEntry): boolean {
   return matcher(entry.title) || matcher(entry.summary);
 }
 
-/** The topics the articles carry, commonest first, with how many have each. */
+/**
+ * The topics the articles carry, with how many articles carry each,
+ * commonest first and then by name.
+ */
 export function topicCounts(
-  entries: FilterEntry[],
+  entries: readonly FilterEntry[],
 ): { topic: string; count: number }[] {
   const counts = new Map<string, { topic: string; count: number }>();
   for (const entry of entries) {
+    const seen = new Set<string>();
     for (const topic of entry.categories) {
       const key = topic.trim().toLowerCase();
-      const known = counts.get(key);
-      counts.set(key, { topic, count: (known?.count ?? 0) + 1 });
+      if (!seen.has(key)) {
+        seen.add(key);
+        const known = counts.get(key);
+        counts.set(key, { topic, count: (known?.count ?? 0) + 1 });
+      }
     }
   }
-  return [...counts.values()].sort(
-    (first, second) =>
-      second.count - first.count || first.topic.localeCompare(second.topic),
+  return [...counts.values()].sort((first, second) =>
+    compareCounted(first.count, first.topic, second.count, second.topic),
   );
+}
+
+function compareCounted(
+  firstCount: number,
+  firstName: string,
+  secondCount: number,
+  secondName: string,
+): number {
+  return secondCount - firstCount || firstName.localeCompare(secondName);
+}
+
+/**
+ * The names with the highest counts first and then by name, the order every
+ * list of topics or words is shown in.
+ */
+export function byCount(
+  names: string[],
+  count: (name: string) => number,
+): string[] {
+  return names
+    .map((name) => ({ name, count: count(name) }))
+    .sort((first, second) =>
+      compareCounted(first.count, first.name, second.count, second.name),
+    )
+    .map(({ name }) => name);
+}
+
+/**
+ * Each topic's place in the view's order, by its trimmed lower-case form,
+ * from `topicCounts`; built once per view so each article looks its topics up.
+ */
+export function topicRanks(
+  counts: readonly { topic: string; count: number }[],
+): Map<string, number> {
+  const ranks = new Map<string, number>();
+  for (const [index, { topic }] of counts.entries()) {
+    ranks.set(topic.trim().toLowerCase(), index);
+  }
+  return ranks;
+}
+
+/**
+ * An article's topics, each once, in the view's order (`topicRanks`): most
+ * articles in the view first, then by name; topics the view does not count go
+ * last, by name.
+ */
+export function articleTopics(
+  categories: string[],
+  ranks: ReadonlyMap<string, number>,
+): string[] {
+  const seen = new Set<string>();
+  const unique: { topic: string; rank: number }[] = [];
+  for (const topic of categories) {
+    const key = topic.trim().toLowerCase();
+    if (!seen.has(key)) {
+      seen.add(key);
+      unique.push({ topic, rank: ranks.get(key) ?? Number.POSITIVE_INFINITY });
+    }
+  }
+  return unique
+    .sort(
+      (first, second) =>
+        first.rank - second.rank || first.topic.localeCompare(second.topic),
+    )
+    .map(({ topic }) => topic);
 }
 
 /**

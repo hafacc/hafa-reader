@@ -120,6 +120,23 @@ class Session(
     var feedsKnown = false
         private set
 
+    // Whether the account's settings from the server, the entry listener's first changes, and the recent window of entries are stored here.
+    @Volatile
+    private var settingsIn = false
+
+    @Volatile
+    private var entriesIn = false
+
+    @Volatile
+    private var recentIn = false
+
+    /**
+     * Whether what the account had when this session began is stored here: its
+     * feeds and settings from the server, the entry listener's first changes,
+     * and the recent window of entries; older ones may still be loading.
+     */
+    val caughtUp: Boolean get() = feedsKnown && settingsIn && entriesIn && (recentIn || state.merged)
+
     /** Whether something failed: a write, or a listener that has not come back yet. */
     val failed: Boolean get() = writeFailed || broken.isNotEmpty()
 
@@ -511,6 +528,10 @@ class Session(
         }
         applyRemote(RemoteChange(settings = pulled, removedSettings = removed))
         queue(LocalChange(settings = merged.push.toMap(), removedSettings = merged.pushRemoved.toMap()))
+        if (settingsReconciled && !settingsIn) {
+            settingsIn = true
+            onStatus()
+        }
     }
 
     private fun listenEntries() {
@@ -526,6 +547,10 @@ class Session(
                             serially {
                                 try {
                                     onEntries(changes)
+                                    if (!entriesIn) {
+                                        entriesIn = true
+                                        onStatus()
+                                    }
                                 } catch (failure: Exception) {
                                     cursorHeld = true
                                     throw failure
@@ -637,6 +662,7 @@ class Session(
             }
             val reached = upper
             if (!state.merged && reached != null && reached < cutoff) {
+                recentIn = true
                 loadingOlder = true
                 onStatus()
                 delay(timing.olderPauseMs)

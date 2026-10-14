@@ -22,6 +22,7 @@
   import { shortcutKey } from "#lib/keys.ts";
   import { detectPlatform, type Platform } from "#lib/platform.ts";
   import { logFailure, Reader, viewKey } from "#lib/reader.svelte.ts";
+  import { applyReadingFont } from "#lib/reading-font.ts";
   import type { Place } from "#lib/types.ts";
   import { goto } from "$app/navigation";
   import { asset } from "$app/paths";
@@ -49,6 +50,10 @@
   const sideCollapsed = $derived(collapsed || compact);
   let ready = $state(false);
   let platform = $state<Platform>("desktop");
+
+  $effect.pre(() => {
+    applyReadingFont(reader.readingFont);
+  });
 
   onMount(() => {
     try {
@@ -97,6 +102,12 @@
       document.removeEventListener("visibilitychange", onVisibility);
     };
   }
+
+  /** The loading screen follows whether something that can still change the lists is loading. */
+  $effect(() => {
+    const busy = reader.loadingBusy;
+    untrack(() => reader.updateGate(busy));
+  });
 
   /** A sync error is said where the person is looking, not only in the sidebar. */
   $effect(() => {
@@ -368,7 +379,9 @@
       target instanceof HTMLElement &&
       ["INPUT", "TEXTAREA", "SELECT"].includes(target.tagName);
     const modifier = event.metaKey || event.ctrlKey || event.altKey;
-    if (typing) {
+    if (reader.gateBlocks) {
+      // the loading screen holds every key until it lets the person in
+    } else if (typing) {
       if (event.key === "Escape" && target instanceof HTMLElement) {
         target.blur();
       }
@@ -401,15 +414,14 @@
 {#if platform === "ios"}
   <IosUnavailable />
 {:else if !reader.checked}
-  <main class="grid h-full place-items-center">
-    <Logo class="size-12" loading />
-  </main>
+  <main class="h-full"></main>
 {:else if !reader.extension.version}
   <InstallExtension />
 {:else}
   <main
     class="grid h-full grid-cols-1 md:grid-cols-[var(--side-width)_22rem_minmax(0,1fr)]"
     style:--side-width={sideCollapsed ? "3.5rem" : "14rem"}
+    inert={reader.gateBlocks}
   >
     <div class="relative hidden min-h-0 md:block">
       <Sidebar
@@ -501,7 +513,7 @@
     {/if}
   </main>
   {#if menuOpen}
-    <div class="fixed inset-0 z-30 md:hidden">
+    <div class="fixed inset-0 z-30 md:hidden" inert={reader.gateBlocks}>
       <button
         type="button"
         class="absolute inset-0 bg-black/40"
@@ -526,6 +538,19 @@
       </div>
     </div>
   {/if}
+{/if}
+
+{#if platform !== "ios" && reader.gateBlocks}
+  <!-- opaque, so nothing half loaded shows; the logo appears only once loading is slow -->
+  <div
+    class="fixed inset-0 z-35 grid place-items-center bg-page"
+    aria-busy="true"
+    out:fade={{ duration: 150 }}
+  >
+    {#if reader.gate.phase === "shown"}
+      <span in:fade={{ duration: 150 }}><Logo class="size-12" loading /></span>
+    {/if}
+  </div>
 {/if}
 
 <!-- mounted even when empty, so screen readers hear each notice as it appears -->

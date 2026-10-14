@@ -492,6 +492,27 @@ export function planRefresh<Feed extends PlannableFeed>(
   };
 }
 
+/**
+ * How late a feed's scheduled check may run before a refresh is suggested, in
+ * milliseconds. The background timers (every 5 minutes in the extension, about
+ * every 15 on Android) normally reach a due feed well within it, so only a
+ * feed they missed, as when the browser or phone slept, counts.
+ */
+export const OVERDUE_MS = 2 * MIN_INTERVAL_MS;
+
+/**
+ * When the first of these feeds becomes overdue: the earliest next check plus
+ * `OVERDUE_MS`; `Infinity` when there are none. One pass over the next checks,
+ * so the caller can recompute it on every change and set one timer for it.
+ */
+export function overdueAt(nextChecks: Iterable<number>): number {
+  let earliest = Number.POSITIVE_INFINITY;
+  for (const nextCheck of nextChecks) {
+    earliest = Math.min(earliest, nextCheck);
+  }
+  return earliest + OVERDUE_MS;
+}
+
 /** Wait after the given number of failures in a row, doubling each time. */
 export function retryInterval(failures: number): number {
   return Math.min(MAX_RETRY_MS, MIN_INTERVAL_MS * 2 ** failures);

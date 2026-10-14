@@ -6,7 +6,6 @@ import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.doubleOrNull
 import okhttp3.HttpUrl.Companion.toHttpUrl
-import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
 
 private const val SEARCH_ADDRESS = "https://cloud.feedly.com/v3/search/feeds"
 private const val SEARCH_COUNT = "8"
@@ -24,6 +23,8 @@ data class FeedHit(
     val icon: String,
     /** How many Feedly readers follow it. */
     val subscribers: Long,
+    /** Address of the feed's site; empty if unknown. */
+    val siteUrl: String = "",
 )
 
 /** The Feedly search address for a query. */
@@ -37,7 +38,10 @@ fun feedSearchAddress(query: String): String =
 private fun JsonObject.string(name: String): String? =
     (this[name] as? JsonPrimitive)?.takeIf { value -> value.isString }?.content
 
-/** The feeds in a Feedly search answer; empty when it cannot be read. */
+/**
+ * The feeds in a Feedly search answer; empty when it cannot be read. A plain
+ * http feed keeps its http address, to be tried over https before it is shown.
+ */
 fun parseFeedSearch(text: String): List<FeedHit> {
     val parsed = try {
         Json.parseToJsonElement(text)
@@ -52,14 +56,15 @@ fun parseFeedSearch(text: String): List<FeedHit> {
             null
         } else {
             FeedHit(
-                url = upgradedAddress(id.replace(FEED_PREFIX, "")),
+                url = webAddress(id.replace(FEED_PREFIX, "")),
                 title = hit.string("title") ?: id,
                 description = hit.string("description") ?: "",
                 icon = upgradedAddress(hit.string("iconUrl") ?: ""),
                 subscribers = (hit["subscribers"] as? JsonPrimitive)?.doubleOrNull?.toLong() ?: 0,
+                siteUrl = hit.string("website") ?: "",
             )
         }
     }
-        .filter { hit -> hit.url.toHttpUrlOrNull()?.isHttps == true }
+        .filter { hit -> hit.url.isNotEmpty() }
         .distinctBy { hit -> hit.url }
 }

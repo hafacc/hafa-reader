@@ -7,6 +7,7 @@ import cc.hafa.reader.core.Feed
 import cc.hafa.reader.core.FeedModel
 import cc.hafa.reader.core.FeedSchedule
 import cc.hafa.reader.core.ReaderPreferences
+import cc.hafa.reader.core.ReadingFont
 import cc.hafa.reader.core.ReaderStore
 import cc.hafa.reader.core.Sort
 import cc.hafa.reader.core.ViewSettings
@@ -172,6 +173,10 @@ class RoomReaderStore(private val dao: ReaderDao) : ReaderStore {
 
 private const val UNREAD_KEY = "unread-only"
 private const val VIEW_KEY = "view"
+private const val READING_FONT_KEY = "reading-font"
+// stored values, the same as the web's
+private const val LITERATA_VALUE = "literata"
+private const val PUBLIC_SANS_VALUE = "public-sans"
 
 /** The reader's small choices in shared preferences. */
 class SharedReaderPreferences(context: Context) : ReaderPreferences {
@@ -184,4 +189,8 @@ class SharedReaderPreferences(context: Context) : ReaderPreferences {
     override var lastView: String
         get() = shared.getString(VIEW_KEY, null) ?: "all"
         set(value) = shared.edit { putString(VIEW_KEY, value) }
+
+    override var readingFont: ReadingFont
+        get() = if (shared.getString(READING_FONT_KEY, null) == PUBLIC_SANS_VALUE) ReadingFont.PublicSans else ReadingFont.Literata
+        set(value) = shared.edit { putString(READING_FONT_KEY, if (value == ReadingFont.PublicSans) PUBLIC_SANS_VALUE else LITERATA_VALUE) }
 }

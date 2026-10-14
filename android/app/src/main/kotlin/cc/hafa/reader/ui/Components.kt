@@ -4,7 +4,15 @@ import android.content.res.Resources
 import androidx.compose.animation.core.animate
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.asPaddingValues
+import androidx.compose.foundation.layout.calculateEndPadding
+import androidx.compose.foundation.layout.calculateStartPadding
+import androidx.compose.foundation.layout.isImeVisible
+import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.RowScope
 import androidx.compose.foundation.layout.Spacer
@@ -12,13 +20,17 @@ import androidx.compose.foundation.layout.safeDrawing
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.ime
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.union
 import androidx.compose.foundation.layout.statusBars
 import androidx.compose.foundation.layout.windowInsetsTopHeight
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.ArrowBack
 import androidx.compose.material3.BottomAppBar
@@ -55,10 +67,13 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.input.nestedscroll.nestedScroll
+import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.platform.LocalResources
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextDecoration
@@ -82,7 +97,11 @@ private const val NOT_FOUND = 404
 private const val GONE = 410
 private const val TOO_MANY_REQUESTS = 429
 
-/** An icon button labeled for screen readers; a toggle that reads as on or off when [pressed] is given. */
+/**
+ * An icon button labeled for screen readers; a toggle that reads as on or off
+ * when [pressed] is given. [dotted] puts a due dot on the icon's corner (see
+ * [WithDueDot]) and has screen readers say a refresh is suggested.
+ */
 @Composable
 fun IconAction(
     icon: ImageVector,
@@ -91,18 +110,26 @@ fun IconAction(
     tint: Color = ReaderTheme.colors.muted,
     iconSize: Dp = 24.dp,
     pressed: Boolean? = null,
+    dotted: Boolean = false,
 ) {
+    val suggestion = stringResource(R.string.refresh_suggested)
+    val announced = Modifier.semantics {
+        if (dotted) {
+            stateDescription = suggestion
+        }
+    }
     if (pressed == null) {
-        IconButton(onClick = onClick, colors = IconButtonDefaults.iconButtonColors(contentColor = tint)) {
-            Icon(icon, contentDescription = label, modifier = Modifier.size(iconSize))
+        IconButton(onClick = onClick, modifier = announced, colors = IconButtonDefaults.iconButtonColors(contentColor = tint)) {
+            WithDueDot(dotted) { Icon(icon, contentDescription = label, modifier = Modifier.size(iconSize)) }
         }
     } else {
         IconToggleButton(
             checked = pressed,
             onCheckedChange = { onClick() },
+            modifier = announced,
             colors = IconButtonDefaults.iconToggleButtonColors(contentColor = tint, checkedContentColor = tint),
         ) {
-            Icon(icon, contentDescription = label, modifier = Modifier.size(iconSize))
+            WithDueDot(dotted) { Icon(icon, contentDescription = label, modifier = Modifier.size(iconSize)) }
         }
     }
 }
@@ -161,6 +188,51 @@ fun ReaderScaffold(
     )
 }
 
+// Material's bottom app bar height, without the system bars under it.
+private val BOTTOM_BAR_HEIGHT = 80.dp
+
+// Space past the end of a screen's scrolling content, above the bottom bar.
+private val SCROLL_END_MARGIN = 32.dp
+
+/**
+ * The space below a screen's scrolling content: the bottom bar's full height,
+ * the system bars under it, and a margin. It stays the same while the bar
+ * slides away, so the end clears the bar and there is always room to scroll
+ * back and bring the bar back.
+ */
+@Composable
+fun scrollEndPadding(): Dp =
+    BOTTOM_BAR_HEIGHT + WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding() + SCROLL_END_MARGIN
+
+/**
+ * The outer padding of a screen's scrolling column, from the scaffold's
+ * [padding]: the column runs on under the bottom bar, so its scrolling room
+ * does not change as the bar slides away, except while typing, when it stops
+ * above the keyboard and the bar so the field in use stays in sight.
+ */
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+private fun underBarPadding(padding: PaddingValues): PaddingValues {
+    val layoutDirection = LocalLayoutDirection.current
+    return PaddingValues(
+        start = padding.calculateStartPadding(layoutDirection),
+        top = padding.calculateTopPadding(),
+        end = padding.calculateEndPadding(layoutDirection),
+        bottom = if (WindowInsets.isImeVisible) padding.calculateBottomPadding() else 0.dp,
+    )
+}
+
+/**
+ * The modifier of a screen's full-size scrolling column, from the scaffold's [padding]: [underBarPadding] outside the
+ * scroll, then [margin] at the sides, a top margin and [scrollEndPadding] at the end inside it.
+ */
+@Composable
+fun Modifier.scrollingScreen(padding: PaddingValues, margin: Dp = 20.dp): Modifier =
+    fillMaxSize()
+        .padding(underBarPadding(padding))
+        .verticalScroll(rememberScrollState())
+        .padding(start = margin, top = 24.dp, end = margin, bottom = scrollEndPadding())
+
 /** Slide a hidden bottom bar back into view. */
 @OptIn(ExperimentalMaterial3Api::class)
 suspend fun BottomAppBarScrollBehavior.showBar() {
@@ -177,20 +249,36 @@ fun BackBottomBar(title: String, scrollBehavior: BottomAppBarScrollBehavior, onB
     }
 }
 
-/** A screen's name in its bottom bar, taking the room the buttons leave. */
+/**
+ * A screen's name in its bottom bar, taking the room the buttons leave; with
+ * [onClick], tapping it does what [clickLabel] says.
+ */
 @Composable
-fun RowScope.BarTitle(title: String) {
-    Text(
-        title,
-        modifier = Modifier
+fun RowScope.BarTitle(title: String, onClick: (() -> Unit)? = null, clickLabel: String? = null) {
+    val tappable = if (onClick == null) {
+        Modifier
+    } else {
+        Modifier
+            .heightIn(min = 48.dp)
+            .clip(RoundedCornerShape(8.dp))
+            .clickable(onClickLabel = clickLabel, role = Role.Button, onClick = onClick)
+    }
+    Box(
+        Modifier
             .weight(1f)
-            .padding(horizontal = 8.dp)
-            .semantics { heading() },
-        fontSize = 18.sp,
-        fontWeight = FontWeight.SemiBold,
-        maxLines = 1,
-        overflow = TextOverflow.Ellipsis,
-    )
+            .then(tappable)
+            .padding(horizontal = 8.dp),
+        contentAlignment = Alignment.CenterStart,
+    ) {
+        Text(
+            title,
+            modifier = Modifier.semantics { heading() },
+            fontSize = 18.sp,
+            fontWeight = FontWeight.SemiBold,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+        )
+    }
 }
 
 /** The page color behind the status bar, for screens whose bar is at the bottom, so content scrolls under it unseen. */
@@ -246,7 +334,7 @@ fun SiteIcon(source: String, title: String, modifier: Modifier = Modifier, size:
     }
 }
 
-/** A bordered button in the text color, with an optional leading [icon], drawn with [iconModifier]. */
+/** A bordered button in the text color, with an optional leading [icon]. */
 @Composable
 fun OutlineButton(
     label: String,
@@ -254,7 +342,6 @@ fun OutlineButton(
     modifier: Modifier = Modifier,
     icon: ImageVector? = null,
     enabled: Boolean = true,
-    iconModifier: Modifier = Modifier,
 ) {
     val colors = ReaderTheme.colors
     OutlinedButton(
@@ -267,7 +354,7 @@ fun OutlineButton(
         contentPadding = if (icon == null) ButtonDefaults.ContentPadding else ButtonDefaults.ButtonWithIconContentPadding,
     ) {
         if (icon != null) {
-            Icon(icon, null, modifier = iconModifier.size(ButtonDefaults.IconSize))
+            Icon(icon, null, modifier = Modifier.size(ButtonDefaults.IconSize))
             Spacer(Modifier.width(ButtonDefaults.IconSpacing))
         }
         Text(label)
@@ -306,7 +393,10 @@ fun ConfirmButton(label: String, confirmLabel: String, confirming: Boolean, onCl
     }
 }
 
-/** A topic as a filter chip, struck through while [off]; [count] shows after it when given. */
+/**
+ * A topic as a filter chip, struck through while [off]; [count] shows after it when given. The one chip for topics in
+ * the settings and under an article; Material keeps its touch area at least 48dp tall.
+ */
 @Composable
 fun TopicChip(topic: String, off: Boolean, onToggle: () -> Unit, count: Int? = null) {
     val colors = ReaderTheme.colors
@@ -333,7 +423,19 @@ fun TopicChip(topic: String, off: Boolean, onToggle: () -> Unit, count: Int? = n
     )
 }
 
-/** A row of choices of which exactly one is on. */
+/** A topic in a chip's outline that does nothing when pressed, for views without a topic filter. */
+@Composable
+fun TopicLabel(topic: String) {
+    val colors = ReaderTheme.colors
+    Box(
+        Modifier.heightIn(min = 32.dp).border(1.dp, colors.line, FilterChipDefaults.shape).padding(horizontal = 12.dp),
+        contentAlignment = Alignment.Center,
+    ) {
+        Text(topic, style = MaterialTheme.typography.labelLarge, color = colors.text)
+    }
+}
+
+/** A row of choices of which exactly one is on, each at least 48dp tall. */
 @Composable
 fun <Value> Segmented(options: List<Pair<Value, String>>, value: Value, onChange: (Value) -> Unit, modifier: Modifier = Modifier) {
     val colors = ReaderTheme.colors
@@ -343,6 +445,8 @@ fun <Value> Segmented(options: List<Pair<Value, String>>, value: Value, onChange
                 selected = option == value,
                 onClick = { onChange(option) },
                 shape = SegmentedButtonDefaults.itemShape(index, options.size),
+                // Material draws these 40dp tall; a finger needs 48.
+                modifier = Modifier.heightIn(min = 48.dp),
                 colors = SegmentedButtonDefaults.colors(
                     activeContainerColor = colors.accentSoft,
                     activeContentColor = colors.text,
@@ -364,6 +468,8 @@ fun problemText(resources: Resources, problem: FeedProblem): String =
         FeedProblem.NotAFeed -> resources.getString(R.string.error_not_a_feed)
         FeedProblem.NotWebAddress -> resources.getString(R.string.error_not_https)
         FeedProblem.NotHttps -> resources.getString(R.string.error_not_https_feed)
+        FeedProblem.HttpRefused -> resources.getString(R.string.error_http_refused)
+        FeedProblem.HttpFeed -> resources.getString(R.string.error_http_feed)
         FeedProblem.Unreadable -> resources.getString(R.string.error_unreadable)
         is FeedProblem.Status -> when (problem.status) {
             UNAUTHORIZED, FORBIDDEN -> resources.getString(R.string.error_refused)

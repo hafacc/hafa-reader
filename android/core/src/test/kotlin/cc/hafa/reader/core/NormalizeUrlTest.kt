@@ -10,9 +10,9 @@ class NormalizeUrlTest {
         "https://Example.com" to "https://example.com/",
         "HTTPS://example.com/a b" to "https://example.com/a%20b",
         "example.com" to "https://example.com/",
-        "  http://example.com/feed  " to "https://example.com/feed",
-        "http://example.com:80/x" to "https://example.com/x",
-        "http://example.com:8080/x" to "https://example.com:8080/x",
+        "  http://example.com/feed  " to "http://example.com/feed",
+        "http://example.com:80/x" to "http://example.com/x",
+        "http://example.com:8080/x" to "http://example.com:8080/x",
         "https://example.com:443/x" to "https://example.com/x",
         "https://EXAMPLE.com/Path?Q=1#Frag" to "https://example.com/Path?Q=1#Frag",
         "https://example.com/a%20b" to "https://example.com/a%20b",
@@ -25,10 +25,11 @@ class NormalizeUrlTest {
         "ftp://example.com/feed" to "",
         "" to "",
         "not a url" to "",
-        "https://user:pass@example.com/" to "https://user:pass@example.com/",
+        // a user name or password is refused, as the shared webAddress fixture says
+        "https://user:pass@example.com/" to "",
         "https://example.com." to "https://example.com./",
         "https://example.com/feed?x=%7e" to "https://example.com/feed?x=%7e",
-        "mailto:x@example.com" to "https://mailto:x@example.com/",
+        "mailto:x@example.com" to "",
         "https://example.com/a^b`c" to "https://example.com/a%5Eb%60c",
         "https://[::1]:8443/feed" to "https://[::1]:8443/feed",
         "https://example.com/a?b=c|d#e|f" to "https://example.com/a?b=c|d#e|f",
@@ -55,7 +56,7 @@ class NormalizeUrlTest {
         val hits = parseFeedSearch(
             """{"results":[{"feedId":"feed/http://Example.com","iconUrl":"http://Example.com/i.png"},{"feedId":"feed/https://example.com/"}]}""",
         )
-        assertEquals(listOf("https://example.com/"), hits.map { hit -> hit.url })
-        assertEquals("https://example.com/i.png", hits.single().icon)
+        assertEquals(listOf("http://example.com/", "https://example.com/"), hits.map { hit -> hit.url })
+        assertEquals("https://example.com/i.png", hits.first().icon)
     }
 }

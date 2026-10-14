@@ -21,7 +21,7 @@
     <div class="mx-auto flex max-w-xl flex-col gap-6">
       <!-- on a phone the title is in the bottom bar alone -->
       <div class="hidden items-start justify-between gap-4 md:flex">
-        <h1 class="font-serif text-3xl font-bold leading-tight">
+        <h1 class="font-reading text-3xl font-bold leading-tight">
           {copy.addFeed}
         </h1>
         <button

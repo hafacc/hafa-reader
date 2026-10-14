@@ -148,22 +148,90 @@ fun hasWord(words: List<String>, entry: FilterEntry): Boolean {
     return matcher(entry.title) || matcher(entry.summary)
 }
 
-/** The topics the articles carry, commonest first, with how many have each. */
+/** The inputs and result of the last [wordCounts], so the panel counts again only when a word or an article's text changes. */
+private class CountedWords(val entries: List<FilterEntry>, val words: List<String>, val counts: Map<String, Int>) {
+    fun matches(otherEntries: List<FilterEntry>, otherWords: List<String>): Boolean =
+        words == otherWords && entries.size == otherEntries.size &&
+            entries.zip(otherEntries).all { (known, other) -> known.title === other.title && known.summary === other.summary }
+}
+
+@Volatile
+private var lastWordCounts: CountedWords? = null
+
+/** The last [wordCounts] for these articles and words, if it is still current. */
+fun knownWordCounts(entries: List<FilterEntry>, words: List<String>): Map<String, Int>? =
+    lastWordCounts?.takeIf { cached -> cached.matches(entries, words) }?.counts
+
+/**
+ * How many of the articles each of the words matches in the title or summary. Slow on a large view, so it is meant
+ * to run off the main thread; the last result is kept and reused while the words and the articles' text stay the same.
+ */
+fun wordCounts(entries: List<FilterEntry>, words: List<String>): Map<String, Int> {
+    val known = knownWordCounts(entries, words)
+    return if (known != null) {
+        known
+    } else {
+        val counts = words.associateWith { word ->
+            val matcher = matcherFor(listOf(word))
+            entries.count { entry -> matcher(entry.title) || matcher(entry.summary) }
+        }
+        lastWordCounts = CountedWords(entries, words, counts)
+        counts
+    }
+}
+
+/** The topics the articles carry, with how many articles carry each, commonest first and then by name. */
 fun topicCounts(entries: List<FilterEntry>): List<TopicCount> {
     val counts = LinkedHashMap<String, TopicCount>()
     for (entry in entries) {
+        val seen = HashSet<String>()
         for (topic in entry.categories) {
-            val key = topic.trim().lowercase()
-            val known = counts[key]
-            counts[key] = TopicCount(topic, (known?.count ?: 0) + 1)
+            val key = topicKey(topic)
+            if (seen.add(key)) {
+                val known = counts[key]
+                counts[key] = TopicCount(topic, (known?.count ?: 0) + 1)
+            }
         }
     }
     val collator = Collator.getInstance()
-    return counts.values.sortedWith { first, second ->
-        val byCount = second.count - first.count
-        if (byCount != 0) byCount else collator.compare(first.topic, second.topic)
-    }
+    return counts.values.sortedWith { first, second -> compareCounted(collator, first.count, first.topic, second.count, second.topic) }
 }
+
+private fun compareCounted(collator: Collator, firstCount: Int, firstName: String, secondCount: Int, secondName: String): Int {
+    val byCount = secondCount - firstCount
+    return if (byCount != 0) byCount else collator.compare(firstName, secondName)
+}
+
+/** The [names] with the highest counts first and then by name, the order every list of topics or words is shown in. */
+fun byCount(names: List<String>, count: (String) -> Int): List<String> {
+    val collator = Collator.getInstance()
+    return names
+        .map { name -> name to count(name) }
+        .sortedWith { (firstName, firstCount), (secondName, secondCount) ->
+            compareCounted(collator, firstCount, firstName, secondCount, secondName)
+        }
+        .map { (name, _) -> name }
+}
+
+/**
+ * A view's topic [counts], commonest first, with the count of each topic looked up by its trimmed lowercase name;
+ * built once per view so ordering an article's topics does not go through all of them again.
+ */
+class TopicOrder(
+    /** The view's topics and how many of its articles carry each, commonest first and then by name. */
+    val counts: List<TopicCount>,
+) {
+    private val byName: Map<String, Int> = counts.associate { item -> topicKey(item.topic) to item.count }
+
+    /** How many of the view's articles carry [topic], ignoring capitals and surrounding space. */
+    fun countOf(topic: String): Int = byName[topicKey(topic)] ?: 0
+}
+
+private fun topicKey(topic: String): String = topic.trim().lowercase()
+
+/** An article's topics, each once, in the view's [order]: most articles in the view first, then by name. */
+fun articleTopics(categories: List<String>, order: TopicOrder): List<String> =
+    byCount(categories.distinctBy(::topicKey), order::countOf)
 
 /** Whether an article stays after the settings' filters are applied. */
 fun passes(settings: ViewSettings, entry: FilterEntry): Boolean = compiledFilter(settings)(entry)
@@ -185,7 +253,7 @@ private fun compiledFilter(settings: ViewSettings): (FilterEntry) -> Boolean {
             val only = if (settings.onlyWords.isEmpty()) null else matcherFor(settings.onlyWords)
             val filter: (FilterEntry) -> Boolean = { entry ->
                 val topicsOff = entry.categories.isNotEmpty() &&
-                    entry.categories.all { topic -> topic.trim().lowercase() in off }
+                    entry.categories.all { topic -> topicKey(topic) in off }
                 val hidden = hide(entry.title) || hide(entry.summary)
                 val kept = only == null || only(entry.title) || only(entry.summary)
                 !(topicsOff || hidden) && kept

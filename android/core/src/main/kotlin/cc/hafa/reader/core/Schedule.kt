@@ -218,6 +218,24 @@ fun chooseInterval(model: FeedModel, nowMs: Long): Double {
     }
 }
 
+/**
+ * How late a feed's scheduled check may run before a refresh is suggested, in
+ * milliseconds. The background checks (about every 15 minutes here, every 5 in
+ * the browser extension) normally reach a due feed well within it, so only a
+ * feed they missed, as when the phone slept, counts.
+ */
+const val OVERDUE_MS = 2 * MIN_INTERVAL_MS
+
+/**
+ * When the first of these feeds becomes overdue: the earliest next check plus
+ * [OVERDUE_MS]; [Long.MAX_VALUE] when there are none. One pass over the next
+ * checks, so the caller can work it out on every change and wait once for it.
+ */
+fun overdueAt(nextChecks: Iterable<Long>): Long {
+    val earliest = nextChecks.minOrNull()
+    return if (earliest == null) Long.MAX_VALUE else earliest + OVERDUE_MS
+}
+
 /** Wait after the given number of failures in a row, doubling each time. */
 fun retryInterval(failures: Int): Long =
     min(MAX_RETRY_MS.toDouble(), MIN_INTERVAL_MS * 2.0.pow(failures)).toLong()

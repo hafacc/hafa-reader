@@ -28,6 +28,7 @@ private class Harness(private val test: TestScope, feeds: List<Feed>, limits: Qu
 
     val calls = mutableListOf<Call>()
     val saves = mutableListOf<List<String>>()
+    val busyReports = mutableListOf<Boolean>()
     private var now = 1_000_000L
     private var timers = mutableListOf<Pair<Long, () -> Unit>>()
     private val byId = feeds.associateBy { item -> item.id }
@@ -44,6 +45,7 @@ private class Harness(private val test: TestScope, feeds: List<Feed>, limits: Qu
         save = { batch -> saves.add(batch.map { finished -> finished.feed.id }) },
         limits = limits,
         setTimer = { delayMs, callback -> timers.add(now + delayMs to callback) },
+        onBusy = { busy -> busyReports.add(busy) },
     )
 
     fun settle() = test.runCurrent()
@@ -94,6 +96,21 @@ class CheckQueueTest {
         queue.enqueue(listOf(CheckRequest(broken.id, 0.5, foreground = true, timeoutMs = 1000)))
         runCurrent()
         assertEquals(listOf("broken", "broken"), calls)
+    }
+
+    @Test
+    fun `busy is reported once when checks start and once when the last is saved`() = runTest {
+        val first = feed("a")
+        val second = feed("b")
+        val harness = Harness(this, listOf(first, second))
+        harness.queue.enqueue(listOf(harness.request(first), harness.request(second)))
+        harness.settle()
+        assertEquals(listOf(true), harness.busyReports)
+        harness.answer("a", done(first))
+        assertEquals(listOf(true), harness.busyReports)
+        harness.answer("b", done(second))
+        assertEquals(listOf("a", "b"), harness.saves.flatten())
+        assertEquals(listOf(true, false), harness.busyReports)
     }
 
     @Test

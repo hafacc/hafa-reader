@@ -6,6 +6,8 @@ export interface OpmlFeed {
   title: string;
   /** Group name; empty for none. */
   folder: string;
+  /** Address of the feed's site; empty when the file gives none. */
+  siteUrl: string;
 }
 
 /** An attribute's value whatever the case of its name, as exporters vary; undefined when absent. */
@@ -28,7 +30,8 @@ function collect(parent: Element, folder: string, feeds: OpmlFeed[]): void {
       if (url === "") {
         collect(child, title, feeds);
       } else {
-        feeds.push({ url, title, folder });
+        const siteUrl = attribute(child, "htmlUrl")?.trim() ?? "";
+        feeds.push({ url, title, folder, siteUrl });
         // the lenient parse nests outlines that follow an unclosed one inside it
         collect(child, folder, feeds);
       }
@@ -68,7 +71,9 @@ function escapeAttribute(text: string): string {
 
 function outlineOf(feed: OpmlFeed, indent: string): string {
   const title = escapeAttribute(feed.title);
-  return `${indent}<outline type="rss" text="${title}" title="${title}" xmlUrl="${escapeAttribute(feed.url)}"/>`;
+  const site =
+    feed.siteUrl === "" ? "" : ` htmlUrl="${escapeAttribute(feed.siteUrl)}"`;
+  return `${indent}<outline type="rss" text="${title}" title="${title}" xmlUrl="${escapeAttribute(feed.url)}"${site}/>`;
 }
 
 /** Write feeds as OPML text, listing each group's feeds inside a folder outline. */

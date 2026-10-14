@@ -68,9 +68,7 @@ private class FakeAccount : AccountStore {
         val listener = sinceMs to onChanges
         entryListeners.add(listener)
         val changes = entries.filter { (_, value) -> value.second > sinceMs }.map { (id, value) -> EntryChange(id, value.first, value.second) }
-        if (changes.isNotEmpty()) {
-            onChanges(changes)
-        }
+        onChanges(changes)
         return Stop { entryListeners.remove(listener) }
     }
 

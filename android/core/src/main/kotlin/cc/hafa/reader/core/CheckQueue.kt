@@ -98,6 +98,8 @@ class QueuedCheck internal constructor(
  * in batches: once no waited-for check is left unfinished and one is done, at
  * [QueueLimits.saveBatch], [QueueLimits.saveIntervalMs] after the last save
  * (with a timer when nothing else comes), or when nothing is left to run.
+ * [onBusy] hears whether anything is queued, running or unsaved each time
+ * that changes.
  */
 class CheckQueue(
     private val scope: CoroutineScope,
@@ -112,6 +114,7 @@ class CheckQueue(
             callback()
         }
     },
+    private val onBusy: (Boolean) -> Unit = {},
 ) {
     private val lock = Mutex()
     private val saveLock = Mutex()
@@ -122,6 +125,7 @@ class CheckQueue(
     private var unsaved = mutableListOf<Pair<QueuedCheck, FinishedCheck>>()
     private var lastSave = 0L
     private var saveTimerArmed = false
+    private var reportedBusy = false
 
     /** Queue checks, joining any already under way, and return each request's check. */
     suspend fun enqueue(requests: List<CheckRequest>): List<Pair<QueuedCheck, CheckRequest>> =
@@ -147,6 +151,7 @@ class CheckQueue(
             }
             saveIfReady()
             pump()
+            reportBusy()
             checks
         }
 
@@ -249,6 +254,16 @@ class CheckQueue(
             }
             saveIfReady()
             pump()
+            reportBusy()
+        }
+    }
+
+    // Called with the lock held.
+    private fun reportBusy() {
+        val busy = checking.isNotEmpty()
+        if (busy != reportedBusy) {
+            reportedBusy = busy
+            onBusy(busy)
         }
     }
 
@@ -266,7 +281,10 @@ class CheckQueue(
                 try {
                     saveLock.withLock { save(batch.map { (_, finished) -> finished }) }
                 } finally {
-                    lock.withLock { batch.forEach { (finishedCheck, _) -> release(finishedCheck) } }
+                    lock.withLock {
+                        batch.forEach { (finishedCheck, _) -> release(finishedCheck) }
+                        reportBusy()
+                    }
                 }
             }
         } else if (unsaved.isNotEmpty() && !saveTimerArmed) {

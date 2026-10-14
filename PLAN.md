@@ -30,12 +30,58 @@ fetches feeds itself and syncs through Firebase.
 - **Formats:** RSS 2.0, Atom and JSON Feed.
 - **Images:** never stored. The article keeps the image URL and the reader loads
   it from the original site.
-- **https only:** no plain http anywhere. Addresses typed or imported as
-  `http://` are rewritten to `https://` before the first try (a feed that then
-  fails shows as failing); feed, site, icon and image addresses from feeds are
-  kept only when https (http upgraded); links and pictures in article text are
-  upgraded to https, and a picture that cannot load over https is dropped. The
-  web app's content policy loads pictures and media from https and data only.
+- **https only:** no plain http is ever fetched. An `http://` address typed
+  or pasted is refused ("Reader can't add http addresses. Try https
+  instead."). Any other plain http feed (one listed in an OPML file, a Feedly
+  search result, or a followed feed saved with http, as older devices and
+  accounts hold) is tried at its https address (`shared/src/https.ts`, ported
+  in `android/core/.../HttpsUpgrade.kt`, cases in `shared/fixtures/https.json`):
+  it counts only when the answer is a 200 that stays on https, parses as a
+  feed, and looks like the same feed (the same name ignoring capitals and
+  spacing, an article in common by guid or link, or a site on the same host as
+  the known site or the http address, ignoring `www.`; a feed the person
+  renamed is not compared by name, since its own name is not kept). An
+  imported feed that passes is added at https and one that fails is left out
+  and counted; a search result that fails is not shown. An address whose host
+  is not a public name (an IP address or a number browsers read as one, a
+  name of one label, `localhost`, or a name under `.local`, `.internal`,
+  `.home.arpa` or `.lan`), or that has a user name or password, is never
+  tried and fails (`probeAllowed`), since these addresses come from files,
+  searches and accounts, not from the person, and trying them must not reach
+  the device or its network. A followed http feed
+  is never put on the schedule and never counts as due; each one is tried once
+  each time the app starts (alongside its checks of due feeds), at most six
+  at once, and again on each later refresh while its tries get no definite
+  answer (no answer at all, as offline or after a timeout, or a 408, 425, 429
+  or 5xx), at most three tries without one (`UNSETTLED_TRIES`) until the app
+  starts again. Background checks (the extension's timer, Android's WorkManager)
+  never try them; the app does it when it opens. One that passes keeps its id
+  (so its articles, marks, settings and group stay), takes the https address
+  as a change of its own (`updatedAt`, sent to the account, so other devices
+  move too) and takes the answer as its first check (on the web the answer
+  goes to the extension with the feed's address, as `first`, and starts its
+  schedule, as an added feed's answer does; answers that would make one
+  message larger than 8 MiB of JSON are spread over several `track`
+  messages, each listing every feed; the extension skips a `first` that is
+  not a fetch's answer and leaves that feed due); one that fails, or whose https
+  address is already followed, shows "This feed's address is http, not
+  https, so Reader can't fetch it." A redirect from https to plain http is
+  followed at the https form of its address, never at http (the extension's
+  content policy has `upgrade-insecure-requests`, which browsers apply to
+  every redirect; Android follows such redirects itself), and fails when
+  nothing answers there. A site that sends its https address back to http
+  then loops; the extension tells that from no answer by asking the address
+  again without following redirects, and reports a redirect answer as not on
+  https, a definite answer ("The feed is not on https." when adding). A feed's id is therefore the hash of the
+  address it was first followed at, so adding and importing also treat a feed
+  whose address matches as already followed, including one followed at the
+  http form of the address; adding that https address moves such a feed there
+  when it passes the same comparison, and otherwise adds the https feed as a
+  feed of its own beside it. Feed, site, icon and image
+  addresses from feeds are kept only when https (http upgraded); links and
+  pictures in article text are upgraded to https, and a picture that cannot
+  load over https is dropped. The web app's content policy loads pictures and
+  media from https and data only.
 
 ## Data model
 
@@ -184,9 +230,13 @@ from a device.
    over the weekend and quiet hours are skipped. Waits range from 15 minutes to 7
    days, never shorter than the site's `Retry-After` or `Cache-Control: max-age`,
    and a failing feed backs off from 15 minutes by doubling, or longer when the
-   site asks. Opening the app and the refresh control force a check of every
-   feed, so freshness comes from the reader and the schedule only has to avoid
-   missing posts. Every fetch sends `ETag` and `If-Modified-Since`; a `304` ends
+   site asks. Opening the app queues a check of every feed that is due,
+   without waiting for it and without showing a refresh (the web sends
+   `checkDue`, which the extension answers as soon as the checks are queued,
+   then takes in what the extension found while the app was closed; the
+   results land through the usual drain), and the refresh controls force a
+   check of the feeds they cover, so freshness comes from the reader and the
+   schedule only has to avoid missing posts. Every fetch sends `ETag` and `If-Modified-Since`; a `304` ends
    it. The chance a feed has news since its last successful check is
    `1 - (beta / (beta + activity))^alpha` over the expected activity since then;
    a feed never checked counts as one, a failing feed as 0.5 if it is due and
@@ -241,7 +291,8 @@ decides). Web with the extension closed gets nothing until a device opens.
   store) and synced like entries. The panel opens where the article does,
   and as a full page on a phone. It holds sort (Newest or Oldest), words and
   topics (Starred has only the sort); the unread-only switch is in the list's
-  bar, not here. A feed's panel also has its group and Unsubscribe.
+  bar, not here. A feed's panel also has its group and Unsubscribe. The panel
+  also holds the reading font, which is one choice for the whole app (see below).
 - **Words and topics** (`shared/src/filter.ts`): type a word or phrase and press
   Enter; two buttons choose whether new words hide matching articles or, once any
   "only show" word exists, keep only articles that have one. Words match the title
@@ -249,7 +300,14 @@ decides). Web with the extension closed gets nothing until a device opens.
   whitespace matches any whitespace, a word boundary is required at an end only
   when that end is a word character, and each list is compiled once. Every topic
   the feed supplies starts on; tap one to turn it off, and an article whose
-  topics are all off is hidden. Chips never move when toggled. A feed's own
+  topics are all off is hidden. Every list of topics or words (the panel's
+  words and topics, and an article's topics, on Starred too) is ordered by how
+  many of the view's articles carry or match each (most first, then by name; an
+  article lists each of its topics once), wrapping into up to three rows; when
+  they need more, they go in three rows read down each column and scroll
+  sideways. Chips never move when toggled. On a phone each topic chip, and
+  each word's remove button, takes taps 44 pixels tall (48 dp on Android)
+  around its smaller outline; both lists use the same chip. A feed's own
   settings also apply in every group and view it appears in.
 - **Managing feeds and groups:** a feed's panel has its name (rename), a group
   field (type a name, with the existing groups suggested; empty for no group) and
@@ -266,41 +324,108 @@ decides). Web with the extension closed gets nothing until a device opens.
   profiles, Mastodon profiles. YouTube `@handle` pages are found through their
   page link. Any other text searches Feedly's public feed search through the
   extension (a dependency to watch: it is not a documented open API and the
-  query goes to Feedly).
-- **OPML import:** drop a file on the panel or choose one; folders are kept;
-  unusable addresses are skipped; the panel says when a file lists nothing or
-  nothing new.
+  query goes to Feedly). A result listed at plain http is tried at its https
+  address before it is shown (see https only), so searching can contact the
+  sites of up to eight results the person never picked.
+- **OPML import:** drop a file on the panel or choose one; an "Add to group"
+  field above it, the same type-or-pick field as a feed's group, puts all the
+  imported feeds in the group named (made if new); left empty ("Folders from
+  the file") it keeps the file's own folders;
+  unusable addresses are skipped; plain http feeds go as https only (see https
+  only) and the panel counts those left out; it says when a file lists nothing
+  or nothing new. A file's `htmlUrl` is kept as the feed's site, and written
+  back on export.
 - **Feed pictures:** the feed's own icon, else the site's `/favicon.ico`, else a
   letter tile. The sidebar rows keep one icon column in both states.
 - **Refreshing:** the Reader name goes to All items and checks every feed, as
   does `Shift R`; clicking the row of the view you are in, the `r` key and pulling
   the list down from its top on a phone check the feeds of that view, as does the
-  Refresh button in the footer that ends every non-empty list ("End of list"
-  and Refresh, shown once every row is drawn); there is no Refresh
-  button in the bars and no gesture at the bottom. Opening the app checks every feed. A refresh drops the read articles
+  Refresh bar that ends every non-empty list (shown once every row is drawn);
+  there is no Refresh button in the bars and no gesture at the bottom. Opening
+  the app checks only the feeds that are due, in the background: nothing turns,
+  the logo does not pulse, the list keeps its rows and Refresh stays usable. A
+  refresh drops the read articles
   kept in the list as soon as it starts; on a phone the list shows a turning
-  marker until it ends.
+  marker until it ends. Only a refresh the person asks for shows: an import's
+  first check of its feeds runs behind the loading screen, and every other
+  check and every change from the account lands unseen.
 - **Unread only:** one switch for the whole app, an eye button in the list's bar (at the bottom on a phone),
   on by default; it lists only unread articles in every feed and group (not in
   Starred) and hides feeds in the sidebar that have nothing unread (the one you are
   viewing stays). Changing view closes the open article. A failed feed is not
   colored: after two failures in a row a small muted marker appears, with the
   reason in the feed's panel and in a band at the top of its list.
+- **Reading font:** Literata (the default) or Public Sans, chosen in every view's
+  panel and applied everywhere. It sets article text, article titles and the
+  large page headings; the rest of the interface is always Public Sans, and
+  counts, bylines and code use the system monospace. It is kept on the device
+  only (`h-reader:reading-font` in the web's local storage, the `reader` shared
+  preferences on Android, both `literata` or `public-sans`) and is not synced.
+  The web serves both fonts from the app's own site (fontsource variable
+  weights, upright and italic; the browser fetches only the scripts and styles
+  a page uses), so every script fontsource offers (Latin, Cyrillic, Greek,
+  Vietnamese) is covered. Android bundles both, upright and italic, cut with
+  fonttools from Google Fonts' variable files by `android/scripts/cut-fonts.sh`
+  (pinned sources; run it again to remake `res/font`): weights 400 to 800,
+  Literata's optical size fixed at 12 pt, and Literata kept to Basic Latin,
+  Latin-1, Latin Extended-A and B, Vietnamese, combining marks, general
+  punctuation, currency signs, modern Greek and the Cyrillic of Russian,
+  Ukrainian, Belarusian, Bulgarian, Serbian and Macedonian (Public Sans has
+  Latin only and keeps every glyph). Polytonic Greek, other Cyrillic, and
+  Greek and Cyrillic in Public Sans fall back to the system font.
 - **Speed:** the list draws only the first 60 rows and more as the end nears;
   sorting and the word and topic filters are computed once per change, not per
-  toggle. With 20,000 articles, toggling unread only takes about 60 ms, all on
+  toggle. The view's topic and word counts, and the topic order each row
+  looks its topics up in, are worked out once per view and kept while only
+  read or starred marks change. With 20,000 articles, toggling unread only takes about 60 ms, all on
   the main thread.
 - **Reading state:** opening an article does not mark
-  it read, leaving it does; read articles stay listed until the view changes;
+  it read, leaving it does; read articles, here or on another device, stay
+  listed until the view changes;
   stepping past either end closes the article.
 - **Sidebar order:** groups come first, then loose feeds; each list is ordered by
   unread count (most first), then working before failing, then by name; the feeds inside a group
   follow the same rule, and a group counts as failing only when all of its feeds
-  do. The `[` and `]` keys follow the same order. The order is worked out at
-  load and again after each refresh, and holds in between; counts still update live, and feeds added
-  later go after the rest.
-- **Loading logo:** the logo pulses while the app loads, feeds refresh, or a feed is
-  being added (not with reduced motion).
+  do. The `[` and `]` keys follow the same order. The order is worked out when
+  the loading screen lets the person in and again after each refresh they ask
+  for (not after the checks made on opening), and holds in between; counts
+  still update live, and feeds added later go after the rest.
+- **Loading logo:** the sidebar logo pulses while feeds refresh at the
+  person's request or a feed is being added (not with reduced motion).
+- **Loading screen:** while what is loading can still change the lists, an
+  opaque screen covers the app and takes every tap, key and swipe (Back still
+  leaves the app from the list on Android): at opening, while stored data is
+  read (and, on the web, the extension is found and what it fetched while the
+  app was closed is taken in); while the account's data arrives, at opening
+  when signed in and after signing in or replacing this device's data, until
+  its feeds and settings have come from the server, the entry listener's first
+  changes are stored and the first pass has the last 90 days (sync offline,
+  failing or waiting for a choice does not hold it); and after an import,
+  until its feeds' first check is in. It is blank for its first 300 ms, so an
+  instant load shows nothing, then shows the turning logo for at least 700 ms;
+  after 15 s it lets the person in whatever is still loading, which goes on
+  unseen. Each time it lets the person in, the lists are settled: the article
+  list and the sidebar take in everything that has arrived and the sidebar
+  order is worked out again. The state machine is `web/src/lib/load-gate.ts`
+  and `android/core/.../LoadGate.kt`, with the same timing and tests.
+- **No pop-in:** once the person is in, articles and feeds that arrive in the
+  background (checks, the extension's drains, WorkManager, the account) wait
+  for the lists to be settled: the article list takes them in when the view
+  changes, unread only is switched, or a refresh the person asked for ends; the
+  sidebar when unread only is switched or such a refresh ends. A feed the
+  sidebar does not list (nothing unread under unread only) stays out when its
+  articles arrive, and an article read on another device stays listed until
+  the view changes, as one read here does. A list or sidebar that shows
+  nothing takes in what arrives, since no row can move; a feed the person adds
+  shows at once. Unread counts still change as marks and articles arrive.
+- **Refresh dot:** a small accent dot on the sidebar logo and on the phone's menu
+  button ("Some feeds are due for a check") says a refresh would help: a feed's
+  scheduled check is more than 30 minutes late (`OVERDUE_MS`, twice the shortest
+  wait, so the background timers normally get there first) and nothing is
+  checking feeds. It is worked out from the earliest next check, one pass per
+  change and one timer, and clears once a refresh has saved the late feeds. The
+  web learns each feed's next check, and whether the extension is checking, from
+  its drain replies.
 - **First run:** with no feeds, the reader asks for a first feed and, below
   that, offers sign-in ("Already use Reader?" and a "Sign in to sync your
   feeds" button, the same sign-in as the sidebar's), for someone whose feeds
@@ -327,7 +452,8 @@ decides). Web with the extension closed gets nothing until a device opens.
   such readers break when the site changes.
 - **Navigation:** one page app; the extension plays the part a service worker does
   for a PWA (fetching, schedule, background). On a phone the menu button in the
-  list's bottom bar opens the feed list over the articles (the title is plain text),
+  list's bottom bar opens the feed list over the articles, as does tapping the view's name
+  beside it ("Show feeds"),
   as does a swipe in from the left edge on the web (the Android app opens it only from
   the button, since a sideways swipe on a card marks it read); moving between the article list and an article
   adds browser history entries, so Back steps out. On Android, Back on the article list
@@ -340,7 +466,11 @@ decides). Web with the extension closed gets nothing until a device opens.
   read, share and open the original, which on a phone appear only there; view settings,
   add feed and sync have Back and the screen's name. On Android the bars slide away while
   scrolling down and come back on the way up, on every new screen or article, and
-  whenever the article is too short to scroll. Wide screens keep the bars at the top.
+  whenever the article is too short to scroll; there every scrolling screen ends with
+  room for the bar's full height and a margin, the same whether the bar is shown or
+  not, so the end clears the bar and there is room to scroll back up and bring it back.
+  The web's bars always show and sit below the content, so it needs no such room. Wide
+  screens keep the bars at the top.
 - **Gestures (phone):** swipe a card sideways to mark it read or unread; swipe an
   article left or right and it slides to the next or previous one in the list's order
   (a pager on Android); a swipe of at least 90 pixels (90 dp on Android) past the first or last slides
@@ -348,11 +478,12 @@ decides). Web with the extension closed gets nothing until a device opens.
   while a shorter one springs back; pull down at the top of the
   list to check the view's feeds (Material's pull to refresh on Android, the same
   marker on the web).
-- **End of list:** the last row of a list that has articles says "End of list" and
-  has a "Refresh" button that checks the view's feeds as pulling down does; while
-  they are checked the button keeps its label, is disabled and its icon turns
-  (still when the system or browser turns motion off). It sits above the bottom
-  bar; there is no pull-up gesture.
+- **End of list:** the last row of a list that has articles is a full-width
+  "Refresh" bar, tappable anywhere across it, that checks the view's feeds as
+  pulling down does; while they are checked it keeps its label, is disabled and
+  its icon turns (still when the system or browser turns motion off). It sits
+  above the bottom bar; there is no pull-up gesture. A list with no articles
+  shows only a line of text, with no picture.
 - **Sidebar:** a brand header (the icon and "Reader") stays in place while the
   sidebar collapses to an icon strip, which opens over the list when hovered; icons
   and rows keep their positions so the change is a smooth width and fade.

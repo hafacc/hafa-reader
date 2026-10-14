@@ -9,6 +9,7 @@
   const {
     entry,
     source,
+    topics,
     active,
     onopen,
     ontoggle,
@@ -16,6 +17,8 @@
   }: {
     entry: Entry;
     source: string;
+    /** The article's topics in the view's order. */
+    topics: string[];
     active: boolean;
     onopen: () => void;
     ontoggle: () => void;
@@ -151,9 +154,9 @@
             : "line-clamp-3 pr-[4.5rem]"}"
           >{entry.excerpt}</span
         >
-        {#if entry.categories.length > 0}
+        {#if topics.length > 0}
           <span class="truncate pr-[4.5rem] text-xs text-faded"
-            >{entry.categories.join(" · ")}</span
+            >{topics.join(" · ")}</span
           >
         {/if}
       </span>

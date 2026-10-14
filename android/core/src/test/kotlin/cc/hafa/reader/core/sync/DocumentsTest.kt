@@ -198,13 +198,13 @@ class DocumentsTest {
     }
 
     @Test
-    fun `account feeds and entries have plain http upgraded`() {
+    fun `account feeds keep a plain http address, and their other addresses and entries are upgraded`() {
         val feed = parseSubscription(
             subscriptionDocument(
                 sampleFeed().copy(url = "http://old.example/rss", siteUrl = "http://old.example/", icon = "http://old.example/icon.png"),
             ).toFields(),
         )
-        assertEquals("https://old.example/rss", feed?.url)
+        assertEquals("http://old.example/rss", feed?.url)
         assertEquals("https://old.example/", feed?.siteUrl)
         assertEquals("https://old.example/icon.png", feed?.icon)
         val entry = parseEntry(entryDocument(sampleEntry().copy(url = "http://old.example/1", imageUrl = "http://old.example/1.png")).toFields())

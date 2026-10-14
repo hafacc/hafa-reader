@@ -9,7 +9,7 @@ const SAMPLE = `<?xml version="1.0"?>
       <outline text="Rust Blog" xmlUrl="https://blog.rust-lang.org/feed.xml"/>
       <outline title="Julia &amp; friends" text="ignored" xmlUrl="https://jvns.ca/atom.xml"/>
     </outline>
-    <outline text="xkcd" xmlUrl="https://xkcd.com/atom.xml"/>
+    <outline text="xkcd" xmlUrl="https://xkcd.com/atom.xml" htmlUrl="https://xkcd.com/"/>
     <outline text="No address"/>
   </body>
 </opml>`;
@@ -21,13 +21,20 @@ describe("parseOpml", () => {
         url: "https://blog.rust-lang.org/feed.xml",
         title: "Rust Blog",
         folder: "Tech",
+        siteUrl: "",
       },
       {
         url: "https://jvns.ca/atom.xml",
         title: "Julia & friends",
         folder: "Tech",
+        siteUrl: "",
       },
-      { url: "https://xkcd.com/atom.xml", title: "xkcd", folder: "" },
+      {
+        url: "https://xkcd.com/atom.xml",
+        title: "xkcd",
+        folder: "",
+        siteUrl: "https://xkcd.com/",
+      },
     ]);
   });
 
@@ -37,8 +44,18 @@ describe("parseOpml", () => {
         '<opml><body><outline TEXT="Loud" XMLURL="https://loud.example/feed"/><outline text="Low" xmlurl="https://low.example/feed"/></body></opml>',
       ),
     ).toEqual([
-      { url: "https://loud.example/feed", title: "Loud", folder: "" },
-      { url: "https://low.example/feed", title: "Low", folder: "" },
+      {
+        url: "https://loud.example/feed",
+        title: "Loud",
+        folder: "",
+        siteUrl: "",
+      },
+      {
+        url: "https://low.example/feed",
+        title: "Low",
+        folder: "",
+        siteUrl: "",
+      },
     ]);
   });
 
@@ -70,7 +87,12 @@ describe("parseOpml", () => {
         '<opml><body><outline title="" text="Tech"><outline title="" text="Rust" xmlUrl="https://r.example/feed"/></outline></body></opml>',
       ),
     ).toEqual([
-      { url: "https://r.example/feed", title: "Rust", folder: "Tech" },
+      {
+        url: "https://r.example/feed",
+        title: "Rust",
+        folder: "Tech",
+        siteUrl: "",
+      },
     ]);
   });
 
@@ -86,14 +108,27 @@ describe("buildOpml", () => {
       url: "https://b.example/feed?x=1&y=2",
       title: 'B "quoted" <feed>',
       folder: "Zeta",
+      siteUrl: "https://b.example/?a=1&b=2",
     },
-    { url: "https://a.example/feed", title: "A", folder: "Alpha & Co" },
-    { url: "https://loose.example/rss", title: "Loose", folder: "" },
+    {
+      url: "https://a.example/feed",
+      title: "A",
+      folder: "Alpha & Co",
+      siteUrl: "",
+    },
+    {
+      url: "https://loose.example/rss",
+      title: "Loose",
+      folder: "",
+      siteUrl: "",
+    },
   ];
 
   test("escapes attributes and puts folders first, sorted", () => {
     const text = buildOpml(feeds);
     expect(text).toContain('xmlUrl="https://b.example/feed?x=1&amp;y=2"');
+    expect(text).toContain('htmlUrl="https://b.example/?a=1&amp;b=2"');
+    expect(text).not.toContain('htmlUrl=""');
     expect(text).toContain('title="B &quot;quoted&quot; &lt;feed&gt;"');
     expect(text.indexOf("Alpha &amp; Co")).toBeLessThan(text.indexOf("Zeta"));
     expect(text.indexOf("Zeta")).toBeLessThan(text.indexOf("Loose"));
