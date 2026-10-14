@@ -7,7 +7,7 @@
   "author": "Erik Brinkman",
   "repository": {
     "type": "git",
-    "url": "https://github.com/hafacc/hafa-reader.git",
+    "url": "https://github.com/hafacc/reader.git",
     "directory": "extension"
   },
   "type": "module",
