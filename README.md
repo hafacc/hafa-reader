@@ -1,8 +1,8 @@
 # Reader
 
-[![build](https://github.com/hafacc/hafa-reader/actions/workflows/build.yml/badge.svg)](https://github.com/hafacc/hafa-reader/actions/workflows/build.yml)
-[![extension](https://img.shields.io/badge/dynamic/json?label=extension&prefix=v&query=%24.version&url=https://raw.githubusercontent.com/hafacc/hafa-reader/main/extension/manifest.json)](https://github.com/hafacc/hafa-reader/releases?q=extension-v)
-[![android](https://img.shields.io/badge/dynamic/regex?label=android&search=versionName%20%3D%20%22%28%5B%5E%22%5D%2B%29%22&replace=v%241&url=https://raw.githubusercontent.com/hafacc/hafa-reader/main/android/app/build.gradle.kts)](https://github.com/hafacc/hafa-reader/releases?q=android-v)
+[![build](https://github.com/hafacc/reader/actions/workflows/build.yml/badge.svg)](https://github.com/hafacc/reader/actions/workflows/build.yml)
+[![extension](https://img.shields.io/badge/dynamic/json?label=extension&prefix=v&query=%24.version&url=https://raw.githubusercontent.com/hafacc/reader/main/extension/manifest.json)](https://github.com/hafacc/reader/releases?q=extension-v)
+[![android](https://img.shields.io/badge/dynamic/regex?label=android&search=versionName%20%3D%20%22%28%5B%5E%22%5D%2B%29%22&replace=v%241&url=https://raw.githubusercontent.com/hafacc/reader/main/android/app/build.gradle.kts)](https://github.com/hafacc/reader/releases?q=android-v)
 
 A simple local RSS reader with optional sync. The web app at [reader.hafa.cc](https://reader.hafa.cc/) reads
 feeds that its Chrome extension fetches and schedules; the Android app works on
