@@ -12,10 +12,12 @@ import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.Font
 import androidx.compose.ui.text.font.FontFamily
+import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.text.font.FontVariation
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.sp
 import cc.hafa.reader.R
+import cc.hafa.reader.core.ReadingFont
 
 /** The web app's palette (web/src/app.css), one set per light or dark. */
 @Immutable
@@ -74,27 +76,51 @@ private val DarkColors = ReaderColors(
 
 private val LocalReaderColors = staticCompositionLocalOf { LightColors }
 
-private fun publicSans(weight: Int) =
-    Font(R.font.public_sans, FontWeight(weight), variationSettings = FontVariation.Settings(FontVariation.weight(weight)))
+private val LocalReadingFont = staticCompositionLocalOf { ReadingFont.Literata }
 
-private fun fraunces(weight: Int) =
-    Font(R.font.fraunces, FontWeight(weight), variationSettings = FontVariation.Settings(FontVariation.weight(weight)))
+// the bundled font files hold weights 400 to 800 only (scripts/cut-fonts.sh)
+private fun publicSans(weight: Int, style: FontStyle) =
+    Font(
+        if (style == FontStyle.Italic) R.font.public_sans_italic else R.font.public_sans,
+        FontWeight(weight),
+        style,
+        variationSettings = FontVariation.Settings(FontVariation.weight(weight)),
+    )
 
-/** Public Sans, the web app's text face. */
-val PublicSans = FontFamily(publicSans(400), publicSans(500), publicSans(600), publicSans(650), publicSans(700), publicSans(800))
+private fun literata(weight: Int, style: FontStyle) =
+    Font(
+        if (style == FontStyle.Italic) R.font.literata_italic else R.font.literata,
+        FontWeight(weight),
+        style,
+        variationSettings = FontVariation.Settings(FontVariation.weight(weight)),
+    )
 
-/** Fraunces, the web app's heading face. */
-val Fraunces = FontFamily(fraunces(400), fraunces(600), fraunces(700), fraunces(800))
+/** Public Sans, the interface's face and one of the reading fonts, with real italics. */
+val PublicSans = FontFamily(
+    listOf(400, 500, 600, 650, 700, 800).flatMap { weight -> listOf(publicSans(weight, FontStyle.Normal), publicSans(weight, FontStyle.Italic)) },
+)
+
+/** Literata, the default reading font, with real italics. */
+val Literata = FontFamily(
+    listOf(400, 500, 600, 700, 800).flatMap { weight -> listOf(literata(weight, FontStyle.Normal), literata(weight, FontStyle.Italic)) },
+)
+
+/** The family [ReadingFont] draws with. */
+val ReadingFont.family: FontFamily
+    get() = when (this) {
+        ReadingFont.Literata -> Literata
+        ReadingFont.PublicSans -> PublicSans
+    }
 
 // The web sets no letter spacing, so neither does any style here.
 private val ReaderTypography = Typography().let { base ->
     Typography(
-        displayLarge = base.displayLarge.copy(fontFamily = Fraunces, letterSpacing = 0.sp),
-        displayMedium = base.displayMedium.copy(fontFamily = Fraunces, letterSpacing = 0.sp),
-        displaySmall = base.displaySmall.copy(fontFamily = Fraunces, letterSpacing = 0.sp),
-        headlineLarge = base.headlineLarge.copy(fontFamily = Fraunces, letterSpacing = 0.sp),
-        headlineMedium = base.headlineMedium.copy(fontFamily = Fraunces, letterSpacing = 0.sp),
-        headlineSmall = base.headlineSmall.copy(fontFamily = Fraunces, letterSpacing = 0.sp),
+        displayLarge = base.displayLarge.copy(fontFamily = PublicSans, letterSpacing = 0.sp),
+        displayMedium = base.displayMedium.copy(fontFamily = PublicSans, letterSpacing = 0.sp),
+        displaySmall = base.displaySmall.copy(fontFamily = PublicSans, letterSpacing = 0.sp),
+        headlineLarge = base.headlineLarge.copy(fontFamily = PublicSans, letterSpacing = 0.sp),
+        headlineMedium = base.headlineMedium.copy(fontFamily = PublicSans, letterSpacing = 0.sp),
+        headlineSmall = base.headlineSmall.copy(fontFamily = PublicSans, letterSpacing = 0.sp),
         titleLarge = base.titleLarge.copy(fontFamily = PublicSans, letterSpacing = 0.sp),
         titleMedium = base.titleMedium.copy(fontFamily = PublicSans, letterSpacing = 0.sp),
         titleSmall = base.titleSmall.copy(fontFamily = PublicSans, letterSpacing = 0.sp),
@@ -107,9 +133,9 @@ private val ReaderTypography = Typography().let { base ->
     )
 }
 
-/** The reader's colors, following the system's light or dark setting. */
+/** The reader's colors, following the system's light or dark setting, and its [readingFont]. */
 @Composable
-fun ReaderTheme(content: @Composable () -> Unit) {
+fun ReaderTheme(readingFont: ReadingFont = ReadingFont.Literata, content: @Composable () -> Unit) {
     val colors = if (isSystemInDarkTheme()) DarkColors else LightColors
     val scheme = if (isSystemInDarkTheme()) darkColorScheme() else lightColorScheme()
     MaterialTheme(
@@ -134,13 +160,17 @@ fun ReaderTheme(content: @Composable () -> Unit) {
             outlineVariant = colors.line,
         ),
     ) {
-        CompositionLocalProvider(LocalReaderColors provides colors, content = content)
+        CompositionLocalProvider(LocalReaderColors provides colors, LocalReadingFont provides readingFont, content = content)
     }
 }
 
-/** Access to the reader's palette. */
+/** Access to the reader's palette and reading font. */
 object ReaderTheme {
     /** The palette in use. */
     val colors: ReaderColors
         @Composable get() = LocalReaderColors.current
+
+    /** The family for article text and titles. */
+    val readingFamily: FontFamily
+        @Composable get() = LocalReadingFont.current.family
 }

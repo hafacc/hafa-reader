@@ -13,8 +13,6 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.ExperimentalLayoutApi
-import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.IntrinsicSize
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
@@ -93,8 +91,8 @@ import androidx.compose.ui.unit.sp
 import cc.hafa.reader.R
 import cc.hafa.reader.core.Entry
 import cc.hafa.reader.core.Selection
+import cc.hafa.reader.core.articleTopics
 import cc.hafa.reader.core.decodeHtmlEntities
-import cc.hafa.reader.core.ViewSettings
 import cc.hafa.reader.core.showsLeadImage
 import cc.hafa.reader.core.topicOff
 import coil3.SingletonImageLoader
@@ -306,21 +304,12 @@ private fun ArticlePage(
                 start = padding.calculateStartPadding(layoutDirection) + side,
                 end = padding.calculateEndPadding(layoutDirection) + side,
                 top = 24.dp,
-                bottom = padding.calculateBottomPadding() + 32.dp,
+                bottom = scrollEndPadding(),
             ),
             verticalArrangement = Arrangement.spacedBy(16.dp),
         ) {
             item(key = "head") {
                 Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                    val dateText = if (entry.dated) articleDate(entry.published) else ""
-                    val feedTitle = state.feeds.firstOrNull { feed -> feed.id == entry.feedId }?.title ?: ""
-                    val meta = listOf(feedTitle, entry.author, dateText).filter { part -> part.isNotEmpty() }.joinToString(" · ")
-                    Text(
-                        meta,
-                        fontFamily = FontFamily.Monospace,
-                        fontSize = 12.sp, lineHeight = 16.sp,
-                        color = colors.muted,
-                    )
                     val title = remember(entry.title, entry.url, colors) {
                         if (entry.url.isEmpty()) {
                             AnnotatedString(entry.title)
@@ -335,11 +324,20 @@ private fun ArticlePage(
                     }
                     Text(
                         title,
-                        fontFamily = Fraunces,
+                        fontFamily = ReaderTheme.readingFamily,
                         fontWeight = FontWeight.Bold,
                         fontSize = 30.sp,
                         lineHeight = 36.sp,
                         style = LocalTextStyle.current.copy(lineBreak = LineBreak.Heading),
+                    )
+                    val dateText = if (entry.dated) articleDate(entry.published) else ""
+                    val feedTitle = state.feeds.firstOrNull { feed -> feed.id == entry.feedId }?.title ?: ""
+                    val meta = listOf(feedTitle, entry.author, dateText).filter { part -> part.isNotEmpty() }.joinToString(" · ")
+                    Text(
+                        meta,
+                        fontFamily = FontFamily.Monospace,
+                        fontSize = 12.sp, lineHeight = 16.sp,
+                        color = colors.muted,
                     )
                 }
             }
@@ -360,28 +358,22 @@ private fun ArticlePage(
             // The actions and topics wait for the body, so they do not show under the title and then jump down.
             if (split != null && entry.categories.isNotEmpty()) {
                 item(key = "categories") {
+                    val topics = remember(entry.categories, view.topicOrder) { articleTopics(entry.categories, view.topicOrder) }
                     // Starred has no topic filter, so there the topics are plain labels.
                     if (state.selection == Selection.Starred) {
-                        Text(entry.categories.joinToString(" · "), fontSize = 12.sp, lineHeight = 16.sp, color = colors.muted)
+                        ChipRows(topics) { topic -> TopicLabel(topic) }
                     } else {
                         // The chips read the view's settings, which change at once; only the list waits for a refresh.
-                        CategoryChips(entry.categories, view.viewSettings) { topic ->
-                            viewModel.model.toggleTopic(topic, fromArticle = true)
+                        ChipRows(topics) { topic ->
+                            TopicChip(
+                                topic,
+                                off = topicOff(view.viewSettings, topic),
+                                onToggle = { viewModel.model.toggleTopic(topic, fromArticle = true) },
+                            )
                         }
                     }
                 }
             }
-        }
-    }
-}
-
-/** The article's topics as filter chips; turning one off hides its articles from the view. */
-@OptIn(ExperimentalLayoutApi::class)
-@Composable
-private fun CategoryChips(categories: List<String>, settings: ViewSettings, onToggle: (String) -> Unit) {
-    FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-        for (category in categories) {
-            TopicChip(category, off = topicOff(settings, category), onToggle = { onToggle(category) })
         }
     }
 }
@@ -470,7 +462,7 @@ private fun BodyBlock(block: HtmlBlock) {
             val links = TextLinkStyles(SpanStyle(color = colors.accent))
             val text = remember(block.html, links) { AnnotatedString.fromHtml(block.html, linkStyles = links) }
             val quoted = block.quoteDepth > 0 || block.kind == TextKind.Caption
-            val style = bodyStyle(block)
+            val style = bodyStyle(block, ReaderTheme.readingFamily)
             Row(
                 Modifier
                     .fillMaxWidth()
@@ -530,8 +522,8 @@ private val HEADING_STYLES = listOf(
     TextStyle(fontSize = 16.sp, lineHeight = 24.sp, fontWeight = FontWeight.SemiBold),
 )
 
-private fun bodyStyle(block: HtmlBlock.Text): TextStyle {
-    val base = TextStyle(fontFamily = PublicSans)
+private fun bodyStyle(block: HtmlBlock.Text, family: FontFamily): TextStyle {
+    val base = TextStyle(fontFamily = family)
     return when (block.kind) {
         TextKind.Heading -> base.merge(HEADING_STYLES[(block.level - 1).coerceIn(0, HEADING_STYLES.size - 1)])
         TextKind.Caption -> base.copy(fontSize = 14.sp, lineHeight = 20.sp, fontStyle = FontStyle.Italic)
@@ -561,6 +553,7 @@ private fun BodyTable(table: HtmlBlock.Table) {
                             .fillMaxHeight()
                             .border(0.5.dp, colors.line)
                             .padding(horizontal = 8.dp, vertical = 6.dp),
+                        fontFamily = ReaderTheme.readingFamily,
                         fontSize = 14.sp,
                         lineHeight = 20.sp,
                         fontWeight = if (cell.header) FontWeight.SemiBold else FontWeight.Normal,

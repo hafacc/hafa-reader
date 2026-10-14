@@ -17,6 +17,14 @@ bun pack        # reader-extension.zip for the Web Store
 bun icons       # icons/ from ../design/icons/logo.svg; needs rsvg-convert
 ```
 
+## https only
+
+The manifest's `content_security_policy` adds `upgrade-insecure-requests` to
+the service worker, so when a feed redirects to `http://` Chrome asks for the
+`https://` address instead and never sends the plain request. It covers only
+the extension's own requests, needs no permission, and the final-address
+check in `outcomeOf` stays as a backstop.
+
 ## Load unpacked
 
 1. Open `chrome://extensions` and turn on **Developer mode**.

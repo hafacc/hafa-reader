@@ -7,17 +7,14 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
-import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.Login
 import androidx.compose.material.icons.filled.Menu
@@ -121,11 +118,7 @@ fun AddFeedScreen(snapshot: Snapshot, viewModel: ReaderViewModel) {
         bottomBar = { scrollBehavior -> BackBottomBar(stringResource(R.string.add_feed), scrollBehavior, viewModel::back) },
     ) { padding ->
         Column(
-            Modifier
-                .fillMaxSize()
-                .padding(padding)
-                .verticalScroll(rememberScrollState())
-                .padding(horizontal = 20.dp, vertical = 24.dp),
+            Modifier.scrollingScreen(padding),
             verticalArrangement = Arrangement.spacedBy(24.dp),
         ) {
             AddFeedForm(snapshot, viewModel, first = false)
@@ -151,11 +144,7 @@ fun FirstFeedScreen(snapshot: Snapshot, viewModel: ReaderViewModel, onMenu: () -
         val arriving = report.email.isNotEmpty() && !report.feedsKnown &&
             report.status in setOf(SyncStatus.Connecting, SyncStatus.Syncing, SyncStatus.Synced)
         Column(
-            Modifier
-                .fillMaxSize()
-                .padding(padding)
-                .verticalScroll(rememberScrollState())
-                .padding(24.dp),
+            Modifier.scrollingScreen(padding, margin = 24.dp),
             verticalArrangement = Arrangement.Center,
         ) {
             if (arriving) {
@@ -186,6 +175,8 @@ private fun AddFeedForm(snapshot: Snapshot, viewModel: ReaderViewModel, first: B
     val adding = snapshot.state.adding
     // a topic search, as opposed to adding an address or a file
     var searching by remember { mutableStateOf(false) }
+    // the group imported feeds go into; blank keeps the file's folders
+    var importGroup by remember { mutableStateOf("") }
 
     // When an address could not be added and was searched for instead, finding nothing gives the address's problem.
     fun search(text: String, problem: FeedProblem? = null) {
@@ -242,7 +233,7 @@ private fun AddFeedForm(snapshot: Snapshot, viewModel: ReaderViewModel, first: B
                 if (source == null) {
                     viewModel.notify(Notice.Text(R.string.import_failed))
                 } else {
-                    viewModel.importOpml(source)
+                    viewModel.importOpml(source, importGroup.trim().ifEmpty { null })
                 }
             }
         }
@@ -269,7 +260,7 @@ private fun AddFeedForm(snapshot: Snapshot, viewModel: ReaderViewModel, first: B
     Column(verticalArrangement = Arrangement.spacedBy(24.dp)) {
         if (first) {
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                Text(stringResource(R.string.empty_title), fontFamily = Fraunces, fontWeight = FontWeight.Bold, fontSize = 24.sp)
+                Text(stringResource(R.string.empty_title), fontFamily = ReaderTheme.readingFamily, fontWeight = FontWeight.Bold, fontSize = 24.sp)
                 Text(stringResource(R.string.empty_body), fontSize = 14.sp, lineHeight = 20.sp, color = colors.muted)
             }
         }
@@ -349,8 +340,16 @@ private fun AddFeedForm(snapshot: Snapshot, viewModel: ReaderViewModel, first: B
         }
         HorizontalDivider(color = colors.line)
         Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-            Text(stringResource(R.string.import_title), fontFamily = Fraunces, fontWeight = FontWeight.Bold, fontSize = 18.sp)
+            Text(stringResource(R.string.import_title), fontFamily = ReaderTheme.readingFamily, fontWeight = FontWeight.Bold, fontSize = 18.sp)
             Text(stringResource(R.string.import_body), fontSize = 14.sp, lineHeight = 20.sp, color = colors.muted)
+            GroupField(
+                importGroup,
+                snapshot.view.folders,
+                label = stringResource(R.string.import_group_label),
+                placeholder = stringResource(R.string.import_keep_folders),
+                enabled = !adding,
+                onEdit = { group -> importGroup = group },
+            )
             val shape = RoundedCornerShape(12.dp)
             Column(
                 Modifier

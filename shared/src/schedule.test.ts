@@ -15,8 +15,10 @@ import {
   MISS_PROBABILITY,
   missProbability,
   newProbability,
+  OVERDUE_MS,
   observe,
   observeWindow,
+  overdueAt,
   type PlannableFeed,
   PRIOR,
   patternFactors,
@@ -420,4 +422,13 @@ test("Retry-After is whole seconds or an HTTP date, and nothing else", () => {
   expect(hint("1.5")).toBe(0);
   expect(hint("Mon, 05 Jan 2026 13:00:00 GMT")).toBe(3_600_000);
   expect(hint("2026-01-05T13:00:00Z")).toBe(0);
+});
+
+test("feeds become overdue a while after their earliest next check", () => {
+  expect(overdueAt([MONDAY + DAY, MONDAY, MONDAY + 2 * DAY])).toBe(
+    MONDAY + OVERDUE_MS,
+  );
+  expect(overdueAt([0])).toBe(OVERDUE_MS);
+  expect(overdueAt([])).toBe(Number.POSITIVE_INFINITY);
+  expect(OVERDUE_MS).toBe(2 * MIN_INTERVAL_MS);
 });

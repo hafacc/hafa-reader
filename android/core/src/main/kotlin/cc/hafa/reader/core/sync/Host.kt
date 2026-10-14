@@ -41,6 +41,8 @@ data class SyncReport(
     val photoUrl: String = "",
     /** Whether the signed-in account's feeds have arrived from the server. */
     val feedsKnown: Boolean = false,
+    /** Whether what the account had when this session began is stored here, all but entries older than the recent window; false when signed out. */
+    val caughtUp: Boolean = false,
 )
 
 /** Everything stored on this device, as sync reads it. */

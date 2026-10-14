@@ -31,9 +31,12 @@ private val MEDIUM_PATH_PATTERN = Regex("^/(@?[\\w.-]+)/?$")
  * escaped), as the shared `upgradedAddress` does; empty when it is not a web
  * address.
  */
-fun upgradedAddress(address: String): String {
+fun upgradedAddress(address: String): String = browserWritten(httpsOnly(address)) { url -> url.isHttps }
+
+/** An http or https address that [accept] takes, written out as browsers write it; empty for anything else. */
+internal fun browserWritten(address: String, accept: (HttpUrl) -> Boolean): String {
     // OkHttp escapes "|" where browsers keep it, so it is carried through as a private character
-    val written = httpsOnly(address.replace("|", PIPE_STAND_IN)).toHttpUrlOrNull()?.takeIf { url -> url.isHttps }?.toString() ?: ""
+    val written = address.replace("|", PIPE_STAND_IN).toHttpUrlOrNull()?.takeIf(accept)?.toString() ?: ""
     val hash = written.indexOf('#')
     val whole = if (hash < 0) written else written.substring(0, hash + 1) + browserFragment(written.substring(hash + 1))
     return whole.replace(ESCAPED_PIPE_STAND_IN, "|").replace(PIPE_STAND_IN, "|")

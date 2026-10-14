@@ -6,7 +6,7 @@
       "name": "hafa-reader-web",
       "devDependencies": {
         "@biomejs/biome": "^2.5.15",
-        "@fontsource-variable/fraunces": "^5.3.0",
+        "@fontsource-variable/literata": "^5.3.0",
         "@fontsource-variable/public-sans": "^5.3.0",
         "@happy-dom/global-registrator": "^21.0.1",
         "@lucide/svelte": "^1.55.0",
@@ -135,7 +135,7 @@
 
     "@firebase/webchannel-wrapper": ["@firebase/webchannel-wrapper@1.0.7", "", {}, "sha512-phBFwieDLvkZGYN9CE9ZFNEIoBVksprzsnCzQejCmCHtgwCXReeuRpoEGN9C4EbhONztv8NRV1tau6Rb9pONwQ=="],
 
-    "@fontsource-variable/fraunces": ["@fontsource-variable/fraunces@5.3.0", "", {}, "sha512-9BYGySn4AHEJdgp9Z28tQ3X+laJMEOITXkQarZXeloWQZDq5oOvXJ3kDA8c7MGIfpogIaZfjrQBqmda8POOCKA=="],
+    "@fontsource-variable/literata": ["@fontsource-variable/literata@5.3.0", "", {}, "sha512-1Jw7xvOcoGyB83lxB2nG4bfNbqtX2/TTbdh9sHAOmU064SvmSdulDtA5RBu5JYWf64fdaKX7xU+z3GO1T2bCHA=="],
 
     "@fontsource-variable/public-sans": ["@fontsource-variable/public-sans@5.3.0", "", {}, "sha512-AVfkmAt50BMXWpOO21FAntiJFKGX6xTc2dSL8dxtDteONe9IuRXJWGbs0EbG955vAMCq23ENeuopuW87cGWDSQ=="],
 

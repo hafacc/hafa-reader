@@ -1,7 +1,9 @@
 package cc.hafa.reader.ui
 
 import android.app.Application
+import android.os.SystemClock
 import android.util.Log
+import androidx.annotation.PluralsRes
 import androidx.annotation.StringRes
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -12,9 +14,12 @@ import cc.hafa.reader.R
 import cc.hafa.reader.core.FeedHit
 import cc.hafa.reader.core.FeedProblem
 import cc.hafa.reader.core.FeedProblemException
+import cc.hafa.reader.core.LoadGate
 import cc.hafa.reader.core.ReaderModel
 import cc.hafa.reader.core.ReaderState
 import cc.hafa.reader.core.ReaderView
+import cc.hafa.reader.core.ReadingFont
+import cc.hafa.reader.core.loadingBusy
 import cc.hafa.reader.core.Selection
 import cc.hafa.reader.core.sync.RetentionDays
 import cc.hafa.reader.core.sync.SyncEngine
@@ -28,10 +33,13 @@ import kotlinx.coroutines.CoroutineExceptionHandler
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.channels.Channel
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.filter
@@ -74,6 +82,14 @@ sealed interface Notice {
     data class Text(
         /** String resource of the message. */
         @param:StringRes val text: Int,
+    ) : Notice
+
+    /** A message that names a count. */
+    data class Count(
+        /** Plurals resource of the message, taking the count as its argument. */
+        @param:PluralsRes val text: Int,
+        /** The count. */
+        val count: Int,
     ) : Notice
 
     /** Why a feed cannot be added. */
@@ -122,6 +138,14 @@ class ReaderViewModel(application: Application) : AndroidViewModel(application) 
         .flowOn(Dispatchers.Default)
         .stateIn(viewModelScope, SharingStarted.Eagerly, null)
 
+    // Whether the account's data holds the loading screen: from opening and from signing in or replacing this device's data, until the screen lets the person in.
+    private val accountAwaited = MutableStateFlow(true)
+
+    private val mutableGate = MutableStateFlow(LoadGate.started(SystemClock.elapsedRealtime()))
+
+    /** The loading screen, which holds the person while what can still change the lists loads. */
+    val gate: StateFlow<LoadGate> = mutableGate.asStateFlow()
+
     private val noticeChannel = Channel<Notice>(Channel.BUFFERED)
 
     /** Messages for the snackbar, each shown once. */
@@ -133,6 +157,12 @@ class ReaderViewModel(application: Application) : AndroidViewModel(application) 
 
     /** What the detail screen holds. */
     var detail by mutableStateOf(Detail.Article)
+        private set
+
+    private val preferences = application.readerApplication.preferences
+
+    /** The font for article text and titles on this device. */
+    var readingFont by mutableStateOf(preferences.readingFont)
         private set
 
     init {
@@ -147,9 +177,36 @@ class ReaderViewModel(application: Application) : AndroidViewModel(application) 
                 .collect { notify(Notice.Text(R.string.sync_error)) }
         }
         viewModelScope.launch(logFailures) {
-            model.load()
-            model.refresh()
+            model.openChecks()
         }
+        viewModelScope.launch(logFailures) {
+            combine(model.state, syncUi, accountAwaited) { state, sync, awaited -> loadingBusy(state, sync.report, awaited) }
+                .distinctUntilChanged()
+                .collectLatest { busy ->
+                    var wake = stepGate(busy)
+                    while (wake != null) {
+                        delay((wake - SystemClock.elapsedRealtime()).coerceAtLeast(0))
+                        wake = stepGate(busy)
+                    }
+                }
+        }
+    }
+
+    /**
+     * Move the loading screen on, with [busy] saying whether something that
+     * can still change the lists is loading; when it next changes on its own,
+     * or null. Letting the person in settles the lists and stops the
+     * account's data from holding them again until they next sign in.
+     */
+    private fun stepGate(busy: Boolean): Long? {
+        val before = mutableGate.value
+        val next = before.step(busy, SystemClock.elapsedRealtime())
+        mutableGate.value = next
+        if (before.blocks && !next.blocks) {
+            accountAwaited.value = false
+            model.settle()
+        }
+        return next.wakeAt()
     }
 
     /** Show [notice] in the snackbar. */
@@ -180,6 +237,12 @@ class ReaderViewModel(application: Application) : AndroidViewModel(application) 
             detail = Detail.Settings
             screen = Screen.Detail
         }
+    }
+
+    /** Choose the reading font, and remember it. */
+    fun chooseReadingFont(font: ReadingFont) {
+        readingFont = font
+        preferences.readingFont = font
     }
 
     /** Open the add-feed screen. */
@@ -216,6 +279,7 @@ class ReaderViewModel(application: Application) : AndroidViewModel(application) 
     fun signIn() {
         val engine = syncEngine.value
         if (engine != null) {
+            accountAwaited.value = true
             engine.signIn()
         } else if (syncBroken.value) {
             brokenSignIn.value = true
@@ -235,6 +299,7 @@ class ReaderViewModel(application: Application) : AndroidViewModel(application) 
 
     /** Replace this device's data with the waiting account's. */
     fun replaceLocal() {
+        accountAwaited.value = true
         syncEngine.value?.replaceLocal()
     }
 
@@ -306,13 +371,15 @@ class ReaderViewModel(application: Application) : AndroidViewModel(application) 
     }
 
     /**
-     * Import OPML text, then show the list when anything was new; when nothing
-     * was, or the file cannot be read, the snackbar says why.
+     * Import OPML text into [group] (null keeps the file's folders, empty is
+     * no group), then show the list when anything was new. When nothing was,
+     * when http feeds were left out, or when the file cannot be read, the
+     * snackbar says so.
      */
-    fun importOpml(source: String) {
+    fun importOpml(source: String, group: String?) {
         viewModelScope.launch(logFailures) {
             val result = try {
-                model.importOpml(source)
+                model.importOpml(source, group)
             } catch (cancelled: CancellationException) {
                 throw cancelled
             } catch (failure: Exception) {
@@ -323,9 +390,12 @@ class ReaderViewModel(application: Application) : AndroidViewModel(application) 
                 notify(Notice.Text(R.string.import_failed))
             } else if (result.found == 0) {
                 notify(Notice.Text(R.string.import_none))
+            } else if (result.skipped > 0) {
+                notify(Notice.Count(R.plurals.import_skipped_http, result.skipped))
             } else if (result.added == 0) {
                 notify(Notice.Text(R.string.import_nothing_new))
-            } else {
+            }
+            if (result != null && result.added > 0) {
                 finishAdding()
             }
         }

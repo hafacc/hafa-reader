@@ -9,6 +9,7 @@
   import { type Retention, retentionFromDays } from "#lib/sync/documents.ts";
   import type { SyncStatus as Status } from "#lib/sync/host.ts";
   import AccountAvatar from "./account-avatar.svelte";
+  import ConfirmButton from "./confirm-button.svelte";
   import PhoneBar from "./phone-bar.svelte";
   import Segmented from "./segmented.svelte";
   import SyncStatus from "./sync-status.svelte";
@@ -66,25 +67,6 @@
     );
   }
 
-  // how long the delete button waits for its second press
-  const CONFIRM_MS = 4000;
-  let confirmingDelete = $state(false);
-  let confirmTimer: ReturnType<typeof setTimeout> | undefined;
-
-  /** The first press asks again; the second deletes the account. */
-  function deleteClicked(): void {
-    clearTimeout(confirmTimer);
-    if (confirmingDelete) {
-      confirmingDelete = false;
-      sync.deleteAccount();
-    } else {
-      confirmingDelete = true;
-      confirmTimer = setTimeout(() => {
-        confirmingDelete = false;
-      }, CONFIRM_MS);
-    }
-  }
-
   const shortcuts: { keys: string[]; label: string; either?: boolean }[] = [
     { keys: ["j"], label: copy.keyNext },
     { keys: ["k"], label: copy.keyPrevious },
@@ -115,7 +97,7 @@
     <div class="mx-auto flex max-w-xl flex-col gap-6">
       <!-- on a phone the account screen's title is in its bottom bar alone -->
       <div class="hidden items-start justify-between gap-4 md:flex">
-        <h1 class="font-serif text-3xl font-bold leading-tight">
+        <h1 class="font-reading text-3xl font-bold leading-tight">
           {copy.shortcutsTitle}
         </h1>
         <button
@@ -181,6 +163,7 @@
           <div class="flex w-full flex-col gap-2">
             <span class="font-medium">{copy.retentionLabel}</span>
             <Segmented
+              label={copy.retentionLabel}
               options={retentionOptions}
               value={retentionKey(sync.retention)}
               onchange={chooseRetention}
@@ -196,22 +179,12 @@
             {copy.syncSignOut}
           </button>
           <p class="text-muted">{copy.syncDeleteHint}</p>
-          <button
-            type="button"
-            class="rounded-lg border px-3 py-2 {confirmingDelete
-              ? "border-star text-star"
-              : "border-line hover:bg-side"}"
+          <ConfirmButton
+            label={sync.deleting ? copy.syncDeleting : copy.syncDeleteAccount}
+            confirmLabel={copy.syncDeleteConfirm}
             disabled={sync.deleting}
-            onclick={deleteClicked}
-          >
-            {#if sync.deleting}
-              {copy.syncDeleting}
-            {:else if confirmingDelete}
-              {copy.syncDeleteConfirm}
-            {:else}
-              {copy.syncDeleteAccount}
-            {/if}
-          </button>
+            onconfirm={() => sync.deleteAccount()}
+          />
           {#if sync.deleteFailed}
             <p class="text-muted">{copy.syncDeleteFailed}</p>
           {/if}

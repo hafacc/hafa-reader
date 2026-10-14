@@ -9,6 +9,9 @@
   import { type Axis, articleSwipe, touchAxis } from "#lib/gestures.ts";
   import { logFailure, type Reader } from "#lib/reader.svelte.ts";
   import { mentionsUrl } from "#lib/sanitize.ts";
+  import { articleTopics } from "$shared/filter.ts";
+  import ChipRows from "./chip-rows.svelte";
+  import TopicChip from "./topic-chip.svelte";
 
   const {
     reader,
@@ -28,6 +31,9 @@
   const END_RESISTANCE = 0.25;
 
   const entry = $derived(reader.current);
+  const topics = $derived(
+    entry ? articleTopics(entry.categories, reader.topicOrder) : [],
+  );
   const showImage = $derived(
     entry !== undefined &&
       entry.imageUrl !== "" &&
@@ -157,7 +163,7 @@
       const { target } = event;
       ignoreSwipe =
         target instanceof Element &&
-        target.closest("pre, .table-scroll, code") !== null;
+        target.closest("pre, .table-scroll, code, [data-scrolls]") !== null;
     }
   }
 
@@ -265,6 +271,21 @@
         style:transform={offset === 0 ? undefined : `translateX(${offset}px)`}
       >
         <div class="flex flex-col gap-3">
+          <h1
+            class="font-reading text-3xl font-bold leading-tight text-balance"
+          >
+            {#if entry.url}
+              <a
+                href={entry.url}
+                target="_blank"
+                rel="noopener noreferrer"
+                class="hover:underline"
+                >{entry.title}</a
+              >
+            {:else}
+              {entry.title}
+            {/if}
+          </h1>
           <div class="flex items-center justify-between gap-3">
             <p class="min-w-0 font-mono text-xs text-muted">{byline}</p>
             <div class="-my-2 -mr-2 hidden shrink-0 md:flex">
@@ -295,19 +316,6 @@
               </button>
             </div>
           </div>
-          <h1 class="font-serif text-3xl font-bold leading-tight text-balance">
-            {#if entry.url}
-              <a
-                href={entry.url}
-                target="_blank"
-                rel="noopener noreferrer"
-                class="hover:underline"
-                >{entry.title}</a
-              >
-            {:else}
-              {entry.title}
-            {/if}
-          </h1>
         </div>
         {#if showImage}
           <img
@@ -317,7 +325,7 @@
             class="max-h-96 w-full rounded-lg object-cover"
           >
         {/if}
-        <div class="prose max-w-none prose-img:rounded">
+        <div class="prose max-w-none font-reading prose-img:rounded">
           <!-- biome-ignore lint/nursery/noSvelteAtHtmlTags: the body is sanitized in the reader -->
           {@html reader.body}
         </div>
@@ -342,34 +350,22 @@
             </button>
           {/if}
         </div>
-        {#if entry.categories.length > 0}
-          <ul class="flex flex-wrap gap-1.5 text-xs text-muted">
-            <!-- keyed by place: a feed can list a topic twice -->
-            {#each entry.categories as category, index (index)}
-              <li>
-                {#if reader.filtersApply}
-                  <button
-                    type="button"
-                    class="rounded-full border border-line px-2.5 py-0.5 {reader.topicOff(
-                      category,
-                    )
-                      ? "text-faded line-through"
-                      : "text-ink"}"
-                    aria-pressed={!reader.topicOff(category)}
-                    onclick={() =>
-                      logFailure(reader.toggleTopic(category, true))}
-                  >
-                    {category}
-                  </button>
-                {:else}
-                  <span
-                    class="block rounded-full border border-line px-2.5 py-0.5 text-ink"
-                    >{category}</span
-                  >
-                {/if}
-              </li>
-            {/each}
-          </ul>
+        {#if topics.length > 0}
+          <ChipRows items={topics} key={(topic) => topic.trim().toLowerCase()}>
+            {#snippet chip(
+              topic: string,
+            )}
+              {#if reader.filtersApply}
+                <TopicChip
+                  {topic}
+                  off={reader.topicOff(topic)}
+                  ontoggle={() => logFailure(reader.toggleTopic(topic, true))}
+                />
+              {:else}
+                <TopicChip {topic} />
+              {/if}
+            {/snippet}
+          </ChipRows>
         {/if}
       </div>
     {:else}

@@ -39,6 +39,7 @@ import com.google.firebase.firestore.Source
 import kotlinx.coroutines.tasks.await
 import java.util.concurrent.Executor
 import java.util.concurrent.Executors
+import java.util.concurrent.atomic.AtomicBoolean
 
 // Errors the rules or the data give, which no retry fixes.
 private val REFUSALS = setOf(
@@ -146,6 +147,8 @@ class FirestoreAccountStore(private val db: FirebaseFirestore, private val uid: 
     }
 
     override fun listenEntries(sinceMs: Long, onChanges: (List<EntryChange>) -> Unit, onError: (Throwable) -> Unit): Stop {
+        // The first snapshot is passed on even when empty, so sync knows the listener has caught up.
+        val heard = AtomicBoolean(false)
         val registration = entries.whereGreaterThan("syncedAt", timestamp(sinceMs)).addSnapshotListener(snapshotExecutor) { snapshot, error ->
             if (error != null) {
                 onError(error)
@@ -153,7 +156,7 @@ class FirestoreAccountStore(private val db: FirebaseFirestore, private val uid: 
                 val changes = snapshot.documentChanges
                     .filter { change -> change.type != DocumentChange.Type.REMOVED && !change.document.metadata.hasPendingWrites() }
                     .map { change -> EntryChange(change.document.id, parseEntry(change.document.data), syncedAt(change.document)) }
-                if (changes.isNotEmpty()) {
+                if (changes.isNotEmpty() || heard.compareAndSet(false, true)) {
                     onChanges(changes)
                 }
             }

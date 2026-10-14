@@ -8,6 +8,7 @@ import android.os.Bundle
 import android.util.Log
 import cc.hafa.reader.core.HttpFeedFetcher
 import cc.hafa.reader.core.ReaderModel
+import cc.hafa.reader.core.ReaderPreferences
 import cc.hafa.reader.core.sync.SyncEngine
 import cc.hafa.reader.data.ReaderDatabase
 import cc.hafa.reader.data.RoomReaderStore
@@ -51,11 +52,14 @@ class ReaderApplication : Application() {
     // Set once a screen shows, so sync listens to the account; a process started only to check feeds just uploads.
     private val onScreen = AtomicBoolean(false)
 
+    /** The reader's small choices on this device. */
+    val preferences: ReaderPreferences by lazy { SharedReaderPreferences(this) }
+
     /** Everything the reader holds, for the whole process. */
     val model: ReaderModel by lazy {
         ReaderModel(
             store = RoomReaderStore(ReaderDatabase.open(this).dao()),
-            preferences = SharedReaderPreferences(this),
+            preferences = preferences,
             fetcher = HttpFeedFetcher(OkHttpClient()),
             scope = scope,
             onBackgroundWork = { RefreshWorker.finishInBackground(this) },

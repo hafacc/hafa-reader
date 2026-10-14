@@ -4,6 +4,7 @@ import {
   judge,
   retrack,
   type ScheduledFeed,
+  takeFirstChecks,
 } from "../../shared/src/check.ts";
 import { decodeBody, readCapped } from "../../shared/src/decode.ts";
 import {
@@ -141,7 +142,12 @@ const NO_ANSWER: FetchOutcome = {
 
 const NOT_HTTPS: FetchOutcome = { ...NO_ANSWER, insecure: true };
 
-/** Read an answer; one whose redirects left https is refused unread. */
+/**
+ * Read an answer; one whose redirects left https is refused unread. The
+ * manifest's `upgrade-insecure-requests` already sends every redirect hop as
+ * https, so this is only a backstop; a site that sends https back to http
+ * loops instead, which `failedFetch` reports.
+ */
 async function outcomeOf(
   response: Response,
   url: string,
@@ -200,10 +206,37 @@ async function fetchOutcome(
       });
       outcome = await outcomeOf(response, url);
     } catch (error) {
-      outcome =
-        error instanceof DOMException && error.name === "TimeoutError"
-          ? undefined
-          : NO_ANSWER;
+      outcome = await failedFetch(url, error, timeoutMs);
+    }
+  }
+  return outcome;
+}
+
+/**
+ * What a fetch that threw says: undefined when it timed out, `NOT_HTTPS` when
+ * the address answers with a redirect (so following it failed: a loop, as the
+ * browser turns a hop back to http into https again, or a target with nothing
+ * on https), and `NO_ANSWER` otherwise.
+ */
+async function failedFetch(
+  url: string,
+  error: unknown,
+  timeoutMs: number,
+): Promise<FetchOutcome | undefined> {
+  let outcome: FetchOutcome | undefined;
+  if (error instanceof DOMException && error.name === "TimeoutError") {
+    outcome = undefined;
+  } else {
+    try {
+      const response = await fetch(url, {
+        redirect: "manual",
+        cache: "no-store",
+        signal: AbortSignal.timeout(timeoutMs),
+      });
+      await response.body?.cancel();
+      outcome = response.type === "opaqueredirect" ? NOT_HTTPS : NO_ANSWER;
+    } catch {
+      outcome = NO_ANSWER;
     }
   }
   return outcome;
@@ -328,8 +361,9 @@ function enqueue(
   });
 }
 
-async function checkDue(): Promise<void> {
-  const checks = await enqueue((tracked, now) =>
+/** Queue background checks of the feeds whose schedule says they are due. */
+function queueDue(): Promise<{ check: CheckHandle; request: CheckRequest }[]> {
+  return enqueue((tracked, now) =>
     tracked
       .filter((feed) => feed.nextFetch <= now)
       .map((feed) => ({
@@ -339,6 +373,11 @@ async function checkDue(): Promise<void> {
         timeoutMs: FETCH_TIMEOUT_MS,
       })),
   );
+}
+
+/** Check the feeds that are due and resolve once they are saved. */
+async function checkDue(): Promise<void> {
+  const checks = await queueDue();
   await Promise.all(checks.map(({ check }) => check.stored));
 }
 
@@ -387,12 +426,14 @@ function track(feeds: TrackedFeed[]): Promise<void> {
       retired: state.retired,
     };
     const waiting = new Set(Object.keys(state.inboxSeqs));
-    const next = retrack(feeds, previous, waiting, Date.now());
-    const kept = new Set(next.tracked.map((feed) => feed.id));
+    const now = Date.now();
+    const next = retrack(feeds, previous, waiting, now);
+    const tracked = await takeFirstChecks(next.tracked, feeds, now);
+    const kept = new Set(tracked.map((feed) => feed.id));
     await chrome.storage.local.set({
-      trackedIds: next.tracked.map((feed) => feed.id),
+      trackedIds: tracked.map((feed) => feed.id),
       retired: next.retired,
-      ...feedEntries(next.tracked),
+      ...feedEntries(tracked),
     });
     await chrome.storage.local.remove(
       state.trackedIds.filter((feedId) => !kept.has(feedId)).map(feedKey),
@@ -418,9 +459,11 @@ function drain(): Promise<ExtensionResponse> {
           feedId: feed.id,
           lastChecked: feed.lastChecked,
           error: feed.failures >= 2 ? feed.error : "",
+          nextCheck: feed.nextFetch,
         }),
       ),
       more: page.more,
+      checking: queue.busy(),
     };
   });
 }
@@ -456,6 +499,9 @@ async function handle(request: ExtensionRequest): Promise<ExtensionResponse> {
   } else if (request.type === "refresh") {
     await refresh(request.feedIds);
     response = { type: "refreshed" };
+  } else if (request.type === "checkDue") {
+    await queueDue();
+    response = { type: "queued" };
   } else if (request.type === "drain") {
     response = await drain();
   } else if (request.type === "ack" && Number.isFinite(request.upTo)) {

@@ -39,14 +39,39 @@ data class ReaderState(
     val loaded: Boolean = false,
     /** Refreshes under way. */
     val refreshCount: Int = 0,
+    /** Whether any feed is queued, being checked or waiting to be saved, for a refresh or in the background. */
+    val checking: Boolean = false,
     /** Whether a feed is being added or imported. */
     val adding: Boolean = false,
     /** Sidebar positions fixed at load and at each refresh; rows added later follow them. */
     val frozenRank: Map<String, Int>? = null,
+    /**
+     * Ids of the articles the list may show; ones that arrive later wait until
+     * the list is next settled, so rows never move under the person. Null
+     * lets every article in.
+     */
+    val heldEntries: Set<String>? = null,
+    /** Ids of the feeds the sidebar may list, held like [heldEntries]; null lets every feed in. */
+    val heldFeeds: Set<String>? = null,
+    /** Imports whose feeds are being checked for the first time. */
+    val importing: Int = 0,
 ) {
     /** Whether feeds are being checked now. */
     val refreshing: Boolean get() = refreshCount > 0
 }
+
+/**
+ * When a refresh starts to help: once the first feed is overdue (see
+ * [overdueAt]), or [Long.MAX_VALUE] while nothing is overdue or feeds are
+ * being checked, so the suggestion clears once a refresh has saved them. A
+ * plain http feed is never on the schedule, so it is never overdue.
+ */
+fun refreshSuggestedAt(state: ReaderState): Long =
+    if (state.refreshing || state.checking) {
+        Long.MAX_VALUE
+    } else {
+        overdueAt(state.feeds.filter { feed -> !isPlainHttp(feed.url) }.map { feed -> feed.schedule.nextFetch })
+    }
 
 /** A feed in the sidebar, with what it is ordered by. */
 data class FeedRow(
@@ -112,8 +137,8 @@ data class ReaderView(
     val baseEntries: List<Entry>,
     /** Entries in the current view, in the chosen order, as listed. */
     val visible: List<Entry>,
-    /** The topics in the current view, commonest first. */
-    val topics: List<TopicCount>,
+    /** The topics in the current view, commonest first, kept as the same object while they stay the same. */
+    val topicOrder: TopicOrder,
     /** Name of the current view. */
     val viewTitle: ViewTitle,
     /** Feeds in the current view; empty means every feed. */
@@ -336,6 +361,20 @@ val NEWEST_FIRST: Comparator<Entry> =
         .thenBy { entry -> entry.url }
         .thenBy { entry -> entry.id }
 
+@Volatile
+private var lastTopicOrder: TopicOrder? = null
+
+/** The topics of [entries] in order, reusing the last order when the counts have not changed, so screens can skip. */
+private fun topicOrderOf(entries: List<Entry>): TopicOrder {
+    val counts = topicCounts(entries)
+    val cached = lastTopicOrder
+    return if (cached != null && cached.counts == counts) {
+        cached
+    } else {
+        TopicOrder(counts).also { order -> lastTopicOrder = order }
+    }
+}
+
 /** Work out what the screens show from the reader's state. */
 fun deriveView(state: ReaderState): ReaderView {
     val selection = state.selection
@@ -348,9 +387,10 @@ fun deriveView(state: ReaderState): ReaderView {
     }
     val kept = baseEntries.filter { entry -> keeps(state, viewSettings, entry) }.map { entry -> entry.id }.toSet()
     val unreadOnly = state.unreadOnly && selection != Selection.Starred
+    val held = state.heldEntries
     val visible = ordered.filter { entry ->
         entry.id == state.currentId ||
-            (entry.id in kept && !(unreadOnly && entry.read && entry.id !in state.pinned))
+            ((held == null || entry.id in held) && entry.id in kept && !(unreadOnly && entry.read && entry.id !in state.pinned))
     }
     val counts = unreadCounts(state.entries, state.feeds, state.settings)
     val unread = counts.byFeed
@@ -372,7 +412,7 @@ fun deriveView(state: ReaderState): ReaderView {
         viewSettings = viewSettings,
         baseEntries = baseEntries,
         visible = visible,
-        topics = topicCounts(baseEntries),
+        topicOrder = topicOrderOf(baseEntries),
         viewTitle = viewTitle,
         viewFeedIds = viewFeedIds,
         current = state.entries.firstOrNull { entry -> entry.id == state.currentId },
@@ -405,11 +445,21 @@ data class SidebarRow(
  */
 fun sidebarRows(state: ReaderState, view: ReaderView): List<SidebarRow> = listedRows(state, view.tree, view.unreadByFeed)
 
+/**
+ * Whether the sidebar lists a feed, given each feed's [unread] count: it is
+ * the one open, or it was there when the sidebar was last settled and has
+ * something unread or unread only is off.
+ */
+fun feedListed(state: ReaderState, unread: Map<String, Int>, feed: Feed): Boolean {
+    val selection = state.selection
+    val held = state.heldFeeds
+    return (selection is Selection.FeedView && selection.id == feed.id) ||
+        ((held == null || feed.id in held) && (!state.unreadOnly || (unread[feed.id] ?: 0) > 0))
+}
+
 private fun listedRows(state: ReaderState, tree: List<TreeRow>, unread: Map<String, Int>): List<SidebarRow> {
     val selection = state.selection
-    fun listed(feed: Feed): Boolean =
-        !state.unreadOnly || (unread[feed.id] ?: 0) > 0 ||
-            (selection is Selection.FeedView && selection.id == feed.id)
+    fun listed(feed: Feed): Boolean = feedListed(state, unread, feed)
     val rows = mutableListOf<SidebarRow>()
     for (item in tree) {
         when (item) {

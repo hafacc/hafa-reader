@@ -17,8 +17,30 @@ export const copy = {
   subscribers: (count: number): string =>
     `${count.toLocaleString()} subscribers`,
   importTitle: "Import from another reader",
-  importBody:
-    "Choose the OPML file exported from your old reader. Folders are kept.",
+  importBody: "Choose the OPML file exported from your old reader.",
+  /** Label of the group field for imported feeds. */
+  importGroupLabel: "Add to group",
+  /** What the import group field says while empty, which keeps the groups the file has. */
+  importKeepFolders: "Folders from the file",
+  /** Plain http feeds in an imported file that have no https version, so were left out. */
+  importSkippedHttp: (count: number): string =>
+    count === 1
+      ? "Skipped 1 http feed with no https version."
+      : `Skipped ${count.toLocaleString()} http feeds with no https version.`,
+  /** Someone typed something that is not a web address. */
+  notWebAddress: "Only https addresses can be added.",
+  /** An address being added got no answer at all. */
+  noAnswer: "The site did not answer.",
+  /** The browser extension that fetches feeds could not be reached. */
+  extensionMissing: "The Reader extension is not installed.",
+  /** An address being added answered with something other than a feed, and links to none. */
+  notFeed: "That address is not a feed and does not point to one.",
+  /** An address being added redirected away from https. */
+  notHttps: "The feed is not on https.",
+  /** Someone typed or pasted a plain http address. */
+  httpRefused: "Reader can't add http addresses. Try https instead.",
+  /** A followed feed whose address is plain http, with no https version found. */
+  httpFeed: "This feed's address is http, not https, so Reader can't fetch it.",
   importDrop: "Drop an OPML file here, or choose one",
   /** Button that saves the feed list as an OPML file. */
   exportOpml: "Export as OPML",
@@ -40,19 +62,26 @@ export const copy = {
   iosBody:
     "For now it works on Android and on a computer with Chrome, where its browser extension fetches your feeds.",
   noEntries: "Nothing here",
-  endOfList: "End of list",
   refreshButton: "Refresh",
+  /** Said by the dot on the logo and the menu button when feeds are overdue for a check. */
+  refreshSuggested: "Some feeds are due for a check",
   selectEntry: "Select an article",
   openOriginal: "Open original",
   settings: "View settings",
   sortLabel: "Sort",
   newest: "Newest",
   oldest: "Oldest",
+  readingFontLabel: "Reading font",
+  /** The reading font is one choice for the whole app, though it sits in each view's settings. */
+  readingFontHint: "Applies to every view.",
+  fontLiterata: "Literata",
+  fontPublicSans: "Public Sans",
   rulesLabel: "Words",
   actionHide: "Hide",
   actionOnly: "Only show",
   addPhrase: "Add a word or phrase, then press Enter",
-  removeRule: "Remove",
+  /** Button that removes one word from a view's words, for screen readers. */
+  removeWord: (word: string): string => `Remove ${word}`,
   filterHint:
     "Words match whole words in the title or summary, ignoring capitals and spacing.",
   topics: "Topics",
@@ -96,6 +125,10 @@ export const copy = {
   close: "Close",
   /** Label of the feed list for screen readers. */
   feeds: "Feeds",
+  /** The phone's menu button when feeds are overdue for a check, for screen readers. */
+  feedsWithDue: "Feeds, some are due for a check",
+  /** The view's name in the phone bar, which shows the feeds when tapped, for screen readers. */
+  showFeedsFrom: (view: string): string => `${view}, show feeds`,
   expandSidebar: "Expand sidebar",
   collapseSidebar: "Collapse sidebar",
   /** Heading of the sign-in and sync section in the shortcuts panel. */

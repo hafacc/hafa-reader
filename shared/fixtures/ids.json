@@ -13,6 +13,18 @@
         "url": "https://www.youtube.com/feeds/videos.xml?channel_id=UCexampleChannel01"
       },
       "output": "2020c506a61097ba06cf773aec62bfbe318cb4224fb9b26cc821dd010221e914"
+    },
+    {
+      "input": { "url": "http://example.com/rss" },
+      "output": "027efd3619b74e8e26de89e62e4b651f5ca1122f2cc397f4d0d4a86e536a1b4c"
+    },
+    {
+      "input": { "url": " http://example.com/rss\t" },
+      "output": "027efd3619b74e8e26de89e62e4b651f5ca1122f2cc397f4d0d4a86e536a1b4c"
+    },
+    {
+      "input": { "url": "http://example.com:443/rss" },
+      "output": "679704ea1a991916a22329655f8d47796b464950e1884faecafe848e18bfb6fd"
     }
   ],
   "entries": [

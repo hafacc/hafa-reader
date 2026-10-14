@@ -92,6 +92,7 @@ test("what the engine reports sets the account's state and is remembered", () =>
     loadingOlder: false,
     retention: "forever",
     feedsKnown: false,
+    caughtUp: false,
   });
   expect(sync.signedIn).toBe(true);
   expect(sync.status).toBe("syncing");
@@ -103,6 +104,7 @@ test("what the engine reports sets the account's state and is remembered", () =>
     loadingOlder: false,
     retention: "forever",
     feedsKnown: false,
+    caughtUp: false,
   });
   expect(sync.status).toBe("waiting");
   sync["report"]({
@@ -112,6 +114,7 @@ test("what the engine reports sets the account's state and is remembered", () =>
     loadingOlder: false,
     retention: "forever",
     feedsKnown: false,
+    caughtUp: false,
   });
   expect(sync.signedIn).toBe(false);
   expect(localStorage.getItem("h-reader:signed-in")).toBeNull();
@@ -135,6 +138,7 @@ test("a retention chosen here goes to the account, and the account's comes back"
     loadingOlder: false,
     retention: 30,
     feedsKnown: false,
+    caughtUp: false,
   });
   expect(sync.retention).toBe(30);
 });
@@ -155,6 +159,7 @@ test("the account's picture is kept only over https, sized for the avatar", () =
     loadingOlder: false,
     retention: "forever",
     feedsKnown: false,
+    caughtUp: false,
   });
   expect(sync.photo).toBe("https://lh3.googleusercontent.com/a/abc=s96-c");
   sync["report"]({
@@ -164,6 +169,7 @@ test("the account's picture is kept only over https, sized for the avatar", () =
     loadingOlder: false,
     retention: "forever",
     feedsKnown: false,
+    caughtUp: false,
   });
   expect(sync.photo).toBe("");
 });

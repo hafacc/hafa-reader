@@ -120,7 +120,7 @@ interface AccountStore {
     /** The newest server write time among the account's entries, read from the server; zero for none. */
     suspend fun newestEntrySyncedAt(): Long
 
-    /** Listen to entries written after [sinceMs] by the server's clock. */
+    /** Listen to entries written after [sinceMs] by the server's clock; the first changes come even when there are none. */
     fun listenEntries(sinceMs: Long, onChanges: (List<EntryChange>) -> Unit, onError: (Throwable) -> Unit): Stop
 
     /** A page of entries newest first, after [after], read from the server. */

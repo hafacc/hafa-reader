@@ -10,7 +10,8 @@
   import { type Axis, touchAxis } from "#lib/gestures.ts";
   import { showsListEnd } from "#lib/list-end.ts";
   import { logFailure, type Reader, viewKey } from "#lib/reader.svelte.ts";
-  import EmptyList from "./empty-list.svelte";
+  import { articleTopics } from "$shared/filter.ts";
+  import DueDot from "./due-dot.svelte";
   import EntryCard from "./entry-card.svelte";
 
   const {
@@ -162,14 +163,25 @@
     <button
       type="button"
       class="grid size-12 place-items-center rounded-md text-ink hover:bg-side md:hidden"
-      aria-label={copy.feeds}
+      aria-label={reader.refreshSuggested ? copy.feedsWithDue : copy.feeds}
       onclick={onmenu}
     >
-      <Menu class="size-5" />
+      <span class="relative">
+        <Menu class="block size-5" />
+        {#if reader.refreshSuggested}
+          <DueDot />
+        {/if}
+      </span>
     </button>
-    <span class="min-w-0 truncate px-1 text-lg font-semibold md:hidden"
-      >{reader.viewTitle}</span
+    <!-- the view's name opens the feed list too, as on Android -->
+    <button
+      type="button"
+      class="flex h-12 min-w-0 items-center rounded-md px-1 text-lg font-semibold hover:bg-side md:hidden"
+      aria-label={copy.showFeedsFrom(reader.viewTitle)}
+      onclick={onmenu}
     >
+      <span class="truncate">{reader.viewTitle}</span>
+    </button>
     <span
       class="hidden whitespace-nowrap font-mono text-xs tabular-nums text-muted md:inline"
       >{copy.unread(reader.viewUnread)}</span
@@ -249,60 +261,51 @@
         </span>
       </div>
     {/if}
-    <div>
-      {#if shownFeed?.error}
-        <p
-          class="flex items-center gap-3 border-b border-line bg-danger/10 px-4 py-3 text-sm text-danger"
+    {#if shownFeed?.error}
+      <p
+        class="flex items-center gap-3 border-b border-line bg-danger/10 px-4 py-3 text-sm text-danger"
+      >
+        <CircleAlert class="size-5 shrink-0" aria-hidden="true" />
+        {shownFeed.error}
+      </p>
+    {/if}
+    {#each rows as entry (entry.id)}
+      <EntryCard
+        {entry}
+        source={feedTitles.get(entry.feedId) ?? ""}
+        topics={articleTopics(entry.categories, reader.topicOrder)}
+        active={entry.id === reader.currentId}
+        onopen={() => {
+          logFailure(reader.open(entry.id));
+          onopen();
+        }}
+        ontoggle={() => logFailure(reader.toggleReadFor(entry.id))}
+        onstar={() => logFailure(reader.toggleStarFor(entry.id))}
+      />
+    {:else}
+      <p
+        class="flex min-h-40 items-center justify-center px-8 py-12 text-center text-sm text-muted"
+      >
+        {copy.noEntries}
+      </p>
+    {/each}
+    {#if showsListEnd(rows.length, reader.visible.length)}
+      <footer class="pb-10">
+        <button
+          type="button"
+          class="flex min-h-14 w-full items-center justify-center gap-2 border-b border-line px-4 text-sm text-ink hover:bg-side disabled:text-muted disabled:hover:bg-transparent"
+          disabled={reader.refreshing}
+          aria-busy={reader.refreshing}
+          onclick={() => logFailure(reader.refreshView())}
         >
-          <CircleAlert class="size-5 shrink-0" aria-hidden="true" />
-          {shownFeed.error}
-        </p>
-      {/if}
-      {#each rows as entry (entry.id)}
-        <EntryCard
-          {entry}
-          source={feedTitles.get(entry.feedId) ?? ""}
-          active={entry.id === reader.currentId}
-          onopen={() => {
-            logFailure(reader.open(entry.id));
-            onopen();
-          }}
-          ontoggle={() => logFailure(reader.toggleReadFor(entry.id))}
-          onstar={() => logFailure(reader.toggleStarFor(entry.id))}
-        />
-      {:else}
-        <div
-          class="flex min-h-40 flex-col items-center justify-center gap-3 px-8 py-12 text-sm text-muted"
-        >
-          <EmptyList class="w-28 max-w-full md:w-32" />
-          <p>{copy.noEntries}</p>
-        </div>
-      {/each}
-      {#if showsListEnd(rows.length, reader.visible.length)}
-        <footer
-          class="flex flex-col items-center gap-3 px-4 pt-6 pb-10 text-sm text-muted"
-        >
-          <p>{copy.endOfList}</p>
-          <div class="flex flex-wrap justify-center gap-2">
-            <button
-              type="button"
-              class="flex min-h-11 items-center gap-2 rounded-lg border border-line px-4 text-ink hover:bg-side disabled:opacity-60"
-              disabled={reader.refreshing}
-              aria-busy={reader.refreshing}
-              onclick={() => logFailure(reader.refreshView())}
-            >
-              <RefreshCw
-                class="size-4 {reader.refreshing
-                  ? "motion-safe:animate-spin"
-                  : ""}"
-                aria-hidden="true"
-              />
-              {copy.refreshButton}
-            </button>
-          </div>
-        </footer>
-      {/if}
-      <div bind:this={sentinel} class="h-px"></div>
-    </div>
+          <RefreshCw
+            class="size-4 {reader.refreshing ? "motion-safe:animate-spin" : ""}"
+            aria-hidden="true"
+          />
+          {copy.refreshButton}
+        </button>
+      </footer>
+    {/if}
+    <div bind:this={sentinel} class="h-px"></div>
   </div>
 </section>

@@ -7,7 +7,7 @@
 </svelte:head>
 
 <h1>Reader privacy policy</h1>
-<p class="text-muted text-sm">Last updated October 13, 2026</p>
+<p class="text-muted text-sm">Last updated October 14, 2026</p>
 
 <p>
   Reader shows new articles from the feeds you add. It has no server of its own.
@@ -31,7 +31,10 @@
   <li>
     When you search for a feed by name instead of entering an address, what you
     type is sent to Feedly's public feed search, and Feedly's privacy policy
-    applies to it.
+    applies to it. When a result's address is plain http, Reader asks for its
+    https address on the site that publishes it before showing it, so a search
+    can contact the sites of results you never pick. Reader never asks addresses
+    on your own device or local network this way.
   </li>
   <li>
     If you sign in with Google, on the web or in the Android app: the email
@@ -46,21 +49,22 @@
 <ul>
   <li>
     On your device: your feeds and groups, their articles, which articles you
-    have read or starred, and each view's settings. In the web app this is the
-    browser's storage for reader.hafa.cc; the Chrome extension keeps the feeds
-    it fetches until the web app picks them up, and when to check each feed
-    next. On Android it is the app's own storage, together with when to check
-    each feed next.
+    have read or starred, each view's settings, and your reading font. In the
+    web app this is the browser's storage for reader.hafa.cc; the Chrome
+    extension keeps the feeds it fetches until the web app picks them up, and
+    when to check each feed next. On Android it is the app's own storage,
+    together with when to check each feed next.
   </li>
   <li>
     Signing in is optional and only turns on sync. When you are signed in, the
     same data is also stored in Google Firebase under your account, so it
     follows you between devices: your feeds and groups, each article's details
     (title, link, author, date, excerpt, summary, topics and picture address),
-    which articles you have read or starred, and your view settings. Only your
-    account can read them. Your account also keeps how long synced articles
-    stay. Articles older than that are removed from your account, never from
-    your device; starred articles stay.
+    which articles you have read or starred, and each view's sort, words and
+    topics. Your reading font stays on the device. Only your account can read
+    them. Your account also keeps how long synced articles stay. Articles older
+    than that are removed from your account, never from your device; starred
+    articles stay.
   </li>
   <li>
     The text of each article you sync is stored once in Firebase, shared by

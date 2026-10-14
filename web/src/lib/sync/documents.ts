@@ -1,5 +1,6 @@
 import { upgradedAddress } from "$shared/address.ts";
 import { DEFAULT_SETTINGS } from "$shared/filter.ts";
+import { webAddress } from "$shared/https.ts";
 import type { Entry, Feed, SavedSettings } from "../types.ts";
 
 const DAY_MS = 24 * 60 * 60 * 1000;
@@ -458,8 +459,8 @@ export function parseSubscription(
   let stored: SubscriptionDocument | undefined;
   if (typeof fields["updatedAt"] === "number") {
     stored = {
-      // https only: plain http is upgraded, other addresses are dropped
-      url: upgradedAddress(text(fields, "url")),
+      // a plain http feed is kept as http, to be tried over https before any fetch; other addresses are dropped
+      url: webAddress(text(fields, "url")),
       title: text(fields, "title"),
       folder: text(fields, "folder"),
       renamed: flag(fields, "renamed"),

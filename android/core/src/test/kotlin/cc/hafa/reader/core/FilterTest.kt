@@ -86,6 +86,41 @@ class FilterTest {
     }
 
     @Test
+    fun `a topic an article lists twice counts once, and ties go by name`() {
+        val twice = story.copy(categories = listOf("Zoo", "zoo ", "Apple"))
+        assertEquals(listOf(TopicCount("Apple", 1), TopicCount("Zoo", 1)), topicCounts(listOf(twice)))
+    }
+
+    @Test
+    fun `names go most counted first, then by name`() {
+        val counts = mapOf("budget" to 2, "senate" to 5, "night" to 2)
+        assertEquals(
+            listOf("senate", "budget", "night", "zoo"),
+            byCount(listOf("budget", "night", "senate", "zoo")) { name -> counts[name] ?: 0 },
+        )
+    }
+
+    @Test
+    fun `an article's topics follow the view's counts, each once`() {
+        val counts = listOf(TopicCount("Politics", 3), TopicCount("Business", 2), TopicCount("U.S.", 2))
+        assertEquals(
+            listOf("politics ", "Business", "U.S.", "US", "Zoo"),
+            articleTopics(listOf("U.S.", "Zoo", "politics ", "Business", "US"), TopicOrder(counts)),
+        )
+        assertEquals(listOf("U.S."), articleTopics(listOf("U.S.", "u.s."), TopicOrder(counts)))
+    }
+
+    @Test
+    fun `word counts count each word's articles and are kept while the text stays the same`() {
+        val other = Story("Night market opens", "Food stalls.", emptyList())
+        val entries = listOf(story, other)
+        val counts = wordCounts(entries, listOf("night", "budget", "zoo"))
+        assertEquals(mapOf("night" to 2, "budget" to 1, "zoo" to 0), counts)
+        assertSame(counts, knownWordCounts(listOf(story, other.copy()), listOf("night", "budget", "zoo")))
+        assertEquals(null, knownWordCounts(entries, listOf("night")))
+    }
+
+    @Test
     fun `a list of words is compiled once and reused`() {
         val first = matcherFor(listOf("reuse check"))
         repeat(50) { hasWord(listOf("reuse check"), story) }

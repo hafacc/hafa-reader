@@ -327,4 +327,29 @@ class ScheduleTest {
         assertEquals(listOf("flat", "monday"), ids(monday + 7 * day - hour))
         assertEquals(listOf("monday", "flat"), ids(monday + 7 * day + 11 * hour))
     }
+
+    @Test
+    fun `feeds become overdue a while after their earliest next check`() {
+        assertEquals(monday + OVERDUE_MS, overdueAt(listOf(monday + day, monday, monday + 2 * day)))
+        assertEquals(OVERDUE_MS, overdueAt(listOf(0L)))
+        assertEquals(Long.MAX_VALUE, overdueAt(emptyList()))
+        assertEquals(2 * MIN_INTERVAL_MS, OVERDUE_MS)
+    }
+
+    @Test
+    fun `a refresh is suggested only while nothing is checking feeds`() {
+        val feeds = listOf(
+            Feed("late", "https://late.example/feed", "Late", "", "", renamed = false, folder = "", error = "", schedule = FeedSchedule(nextFetch = monday)),
+        )
+        assertEquals(monday + OVERDUE_MS, refreshSuggestedAt(ReaderState(feeds = feeds)))
+        assertEquals(Long.MAX_VALUE, refreshSuggestedAt(ReaderState(feeds = feeds, checking = true)))
+        assertEquals(Long.MAX_VALUE, refreshSuggestedAt(ReaderState(feeds = feeds, refreshCount = 1)))
+        assertEquals(Long.MAX_VALUE, refreshSuggestedAt(ReaderState()))
+    }
+
+    @Test
+    fun `a plain http feed, never checked, is never overdue`() {
+        val plain = Feed("plain", "http://plain.example/feed", "Plain", "", "", renamed = false, folder = "", error = "", schedule = FeedSchedule(nextFetch = 0))
+        assertEquals(Long.MAX_VALUE, refreshSuggestedAt(ReaderState(feeds = listOf(plain))))
+    }
 }
